@@ -3,3 +3,5 @@ yfinance
 plotly
 pandas
 FinMind
+tqdm
+requests
