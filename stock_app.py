@@ -8,11 +8,10 @@ from datetime import datetime, timedelta
 from FinMind.data import DataLoader
 from plotly.subplots import make_subplots
 
-# --- 0. 資料庫功能設定 (支援存儲股票名單與成本) ---
+# --- 0. 資料庫功能設定 ---
 DB_FILE = "my_stock_db.json"
 
 def load_db():
-    """載入資料庫 (包含成本與股票清單)"""
     default_data = {
         "costs": {"2356.TW": 49.0, "0050.TW": 185.0},
         "list": {
@@ -34,11 +33,9 @@ def load_db():
     return default_data
 
 def save_db(data):
-    """儲存資料庫"""
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# 使用 session_state 確保在運行期間數據一致
 if 'db' not in st.session_state:
     st.session_state.db = load_db()
 
@@ -55,25 +52,31 @@ st.title("📈 小鐵的股票分析報告")
 
 # --- 2. 側邊欄：導航與設定 ---
 st.sidebar.title("🛠️ 小鐵的導航面板")
-
-# --- 庫存清單管理區 ---
 st.sidebar.subheader("📋 庫存清單管理")
 
-# 新增股票功能
-col_add_1, col_add_2 = st.sidebar.columns([2, 1])
-new_stock_id = col_add_1.text_input("輸入代號", placeholder="2330.TW", key="input_new_id").upper()
-if col_add_2.button("➕新增"):
-    if new_stock_id and new_stock_id not in st.session_state.db["list"]:
-        st.session_state.db["list"][new_stock_id] = new_stock_id 
+# 建立兩個輸入框
+col_id, col_name = st.sidebar.columns(2)
+manual_id = col_id.text_input("股票代號", placeholder="2330.TW", key="manual_id").upper()
+manual_name = col_name.text_input("顯示名稱", placeholder="台積電", key="manual_name")
+
+if st.sidebar.button("➕ 手動加入庫存"):
+    if manual_id and manual_name:
+        # 將你輸入的內容存進資料庫
+        st.session_state.db["list"][manual_id] = manual_name
         save_db(st.session_state.db)
+        st.sidebar.success(f"成功加入：{manual_name}")
         st.rerun()
+    else:
+        st.sidebar.error("請同時輸入代號與名稱喔！")
 
-# 顯示選單
+# 顯示選單 (格式優化)
 stock_options = st.session_state.db["list"]
-selected_ticker = st.sidebar.selectbox("選取庫存分析", list(stock_options.keys()), 
-                                      format_func=lambda x: f"{x} {stock_options[x]}")
+selected_ticker = st.sidebar.selectbox(
+    "選取庫存分析", 
+    list(stock_options.keys()), 
+    format_func=lambda x: f"{x} {stock_options[x]}"
+)
 
-# 刪除目前的股票
 if st.sidebar.button(f"🗑️ 從庫存刪除 {selected_ticker}"):
     if len(st.session_state.db["list"]) > 1:
         del st.session_state.db["list"][selected_ticker]
@@ -81,8 +84,6 @@ if st.sidebar.button(f"🗑️ 從庫存刪除 {selected_ticker}"):
             del st.session_state.db["costs"][selected_ticker]
         save_db(st.session_state.db)
         st.rerun()
-    else:
-        st.sidebar.error("至少要保留一檔股票喔！")
 
 st.sidebar.markdown("---")
 custom_ticker = st.sidebar.text_input("🔍 全域搜尋 (不加入庫存)", "")
@@ -122,10 +123,9 @@ if ticker_input:
         high_60d = float(data['High'].tail(60).max())
         dist_to_high = ((high_60d - price) / high_60d) * 100
 
-        # --- 4. 指標儀表板 (台股顏色修正) ---
-        st.subheader(f"📊 {ticker_input} 即時概況")
+        # --- 4. 指標儀表板 ---
+        st.subheader(f"📊 {ticker_input} {st.session_state.db['list'].get(ticker_input, '')} 即時概況")
         m1, m2, m3, m4, m5, m6 = st.columns(6)
-        # delta_color="inverse" 讓上漲變紅
         m1.metric("當前股價", f"{price:.2f}", f"{price - float(prev['Close']):.2f}", delta_color="inverse")
         m2.metric("前波高點", f"{high_60d:.2f}")
         m3.metric("挑戰進度", f"{100 - dist_to_high:.1f}%")
@@ -157,9 +157,7 @@ if ticker_input:
                 c1, c2, c3 = st.columns(3)
                 c1.metric("便宜價", f"{cheap_price:.2f}")
                 c2.metric("合理價", f"{fair_price:.2f}")
-                c3.metric("昂備價", f"{expensive_price:.2f}")
-                
-                st.write(f"目前股價: **{current_price}** | 目前本益比: **{current_pe:.2f}**")
+                c3.metric("昂貴價", f"{expensive_price:.2f}")
                 
                 if current_price <= cheap_price:
                     st.success("🎯 **診斷結果：股價處於【便宜】位階。**")
@@ -177,19 +175,18 @@ if ticker_input:
         except:
             st.info(f"估值數據暫時無法取得。")
 
-        # --- 5. 繪製 K 線圖 (台股顏色修正) ---
+        # --- 5. 繪製 K 線圖 ---
         fig = make_subplots(
             rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, 
             subplot_titles=(f'{ticker_input} K線與均線', '成交量'), 
             row_width=[0.3, 0.7]
         )
         
-        # K線增加紅漲綠跌設定
         fig.add_trace(go.Candlestick(
             x=data.index, open=data['Open'], high=data['High'],
             low=data['Low'], close=data['Close'], name="K線",
-            increasing_line_color='red',   # 上漲紅
-            decreasing_line_color='green'  # 下跌綠
+            increasing_line_color='red',   
+            decreasing_line_color='green'  
         ), row=1, col=1)
         
         fig.add_trace(go.Scatter(x=data.index, y=data['MA5'], line=dict(color='#17becf', width=1.5), name="5MA"), row=1, col=1)
@@ -197,7 +194,6 @@ if ticker_input:
         fig.add_trace(go.Scatter(x=data.index, y=data['MA60'], line=dict(color='#9467bd', width=2), name="60MA"), row=1, col=1)
         fig.add_hline(y=high_60d, line_dash="dot", line_color="yellow", annotation_text="前高壓力", row=1, col=1)
 
-        # 成交量顏色修正：上漲紅、下跌綠
         colors = ['red' if row['Close'] >= row['Open'] else 'green' for _, row in data.iterrows()]
         
         fig.add_trace(go.Bar(x=data.index, y=data['Volume'], name="成交量", marker_color=colors, opacity=0.7), row=2, col=1)
