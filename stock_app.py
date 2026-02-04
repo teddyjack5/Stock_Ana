@@ -101,7 +101,7 @@ if ticker_input:
         # --- 4. 指標儀表板 ---
         st.subheader(f"📊 {ticker_input} 即時概況")
         m1, m2, m3, m4, m5, m6 = st.columns(6)
-        m1.metric("當前股價", f"{price:.2f}", f"{price - float(prev['Close']):.2f}")
+        m1.metric("當前股價", f"{price:.2f}", f"{price - float(prev['Close']):.2f}",delta_color="inverse")
         m2.metric("前波高點", f"{high_60d:.2f}")
         m3.metric("挑戰進度", f"{100 - dist_to_high:.1f}%")
         m4.metric("5日均線", f"{float(curr['MA5']):.2f}")
@@ -284,4 +284,5 @@ if show_news and ticker_input:
                     else:
                         st.markdown(f"[🔍 Google 搜尋](https://www.google.com/search?q={row['clean_title']})")
     except Exception as e:
+
         st.error(f"新聞抓取失敗: {e}")
