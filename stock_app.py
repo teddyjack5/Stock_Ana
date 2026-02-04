@@ -8,26 +8,39 @@ from datetime import datetime, timedelta
 from FinMind.data import DataLoader
 from plotly.subplots import make_subplots
 
-# --- 0. 資料庫功能設定 ---
+# --- 0. 資料庫功能設定 (支援存儲股票名單與成本) ---
 DB_FILE = "my_stock_db.json"
 
-def load_costs():
-    """載入成本資料庫"""
+def load_db():
+    """載入資料庫 (包含成本與股票清單)"""
+    default_data = {
+        "costs": {"2356.TW": 49.0, "0050.TW": 185.0},
+        "list": {
+            "2356.TW": "英業達",
+            "2618.TW": "長榮航",
+            "2609.TW": "陽明",
+            "2352.TW": "佳世達",
+            "2002.TW": "中鋼",
+            "2646.TW": "星宇航空",
+            "0050.TW": "元大台灣50"
+        }
+    }
     if os.path.exists(DB_FILE):
         try:
-            with open(DB_FILE, "r") as f:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except:
-            return {}
-    return {"2356.TW": 49.0, "0050.TW": 185.0}
+            return default_data
+    return default_data
 
-def save_costs(costs):
-    """儲存成本至資料庫"""
-    with open(DB_FILE, "w") as f:
-        json.dump(costs, f)
+def save_db(data):
+    """儲存資料庫"""
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
-# 初始化載入
-my_costs = load_costs()
+# 使用 session_state 確保在運行期間數據一致
+if 'db' not in st.session_state:
+    st.session_state.db = load_db()
 
 # --- 1. 配置 FinMind ---
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMS0yOCAwODoyNToyNyIsInVzZXJfaWQiOiJ0ZWRkeWphY2siLCJlbWFpbCI6InRlZGR5amFjazVAeWFob28uY29tLnR3IiwiaXAiOiI0Mi43Mi4yMTEuMTUzIn0.Su4W8X5E9XPN9PZdA03Z6XO6i630kOSvOjcrLowcO-I"
@@ -43,65 +56,77 @@ st.title("📈 小鐵的股票分析報告")
 # --- 2. 側邊欄：導航與設定 ---
 st.sidebar.title("🛠️ 小鐵的導航面板")
 
-my_stocks = {
-    "2356.TW": "英業達",
-    "2618.TW": "長榮航",
-    "2609.TW": "陽明",
-    "2352.TW": "佳世達",
-    "2002.TW": "中鋼",
-    "2646.TW": "星宇航空",
-    "0050.TW": "元大台灣50"
-}
+# --- 庫存清單管理區 ---
+st.sidebar.subheader("📋 庫存清單管理")
 
-selected_ticker = st.sidebar.selectbox("選取庫存", list(my_stocks.keys()))
-custom_ticker = st.sidebar.text_input("或手動輸入 (例: 2330.TW)", "")
+# 新增股票功能
+col_add_1, col_add_2 = st.sidebar.columns([2, 1])
+new_stock_id = col_add_1.text_input("輸入代號", placeholder="2330.TW", key="input_new_id").upper()
+if col_add_2.button("➕新增"):
+    if new_stock_id and new_stock_id not in st.session_state.db["list"]:
+        st.session_state.db["list"][new_stock_id] = new_stock_id 
+        save_db(st.session_state.db)
+        st.rerun()
+
+# 顯示選單
+stock_options = st.session_state.db["list"]
+selected_ticker = st.sidebar.selectbox("選取庫存分析", list(stock_options.keys()), 
+                                      format_func=lambda x: f"{x} {stock_options[x]}")
+
+# 刪除目前的股票
+if st.sidebar.button(f"🗑️ 從庫存刪除 {selected_ticker}"):
+    if len(st.session_state.db["list"]) > 1:
+        del st.session_state.db["list"][selected_ticker]
+        if selected_ticker in st.session_state.db["costs"]:
+            del st.session_state.db["costs"][selected_ticker]
+        save_db(st.session_state.db)
+        st.rerun()
+    else:
+        st.sidebar.error("至少要保留一檔股票喔！")
+
+st.sidebar.markdown("---")
+custom_ticker = st.sidebar.text_input("🔍 全域搜尋 (不加入庫存)", "")
 ticker_input = custom_ticker if custom_ticker else selected_ticker
 
 period = st.sidebar.selectbox("分析時間範圍", ["5d", "1mo", "6mo", "1y", "2y"], index=2)
 
 # --- 成本管理區 ---
-st.sidebar.markdown("---")
 st.sidebar.subheader("💰 成本管理")
-initial_cost = my_costs.get(ticker_input, 0.0)
-cost = st.sidebar.number_input(f"{ticker_input} 買入成本", value=float(initial_cost), step=0.1)
+current_saved_cost = st.session_state.db["costs"].get(ticker_input, 0.0)
+cost = st.sidebar.number_input(f"{ticker_input} 買入成本", value=float(current_saved_cost), step=0.1)
 
-if st.sidebar.button("💾 永久儲存修改"):
-    my_costs[ticker_input] = cost
-    save_costs(my_costs)
+if st.sidebar.button("💾 永久儲存成本"):
+    st.session_state.db["costs"][ticker_input] = cost
+    save_db(st.session_state.db)
     st.sidebar.success(f"已更新 {ticker_input} 成本！")
 
 show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
 
 # --- 3. 下載與處理資料 ---
 if ticker_input:
-    # 建立 Ticker 物件
     ticker_obj = yf.Ticker(ticker_input)
     data = yf.download(ticker_input, period=period)
     
     if not data.empty:
-        # 處理 yfinance 多重索引問題
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
 
-        # 計算技術指標
         data['MA5'] = data['Close'].rolling(window=5).mean()
         data['MA20'] = data['Close'].rolling(window=20).mean()
         data['MA60'] = data['Close'].rolling(window=60).mean()
 
-        # 取得最新一筆與前一筆數據
         curr = data.iloc[-1]
         prev = data.iloc[-2]
         price = float(curr['Close'])
-        volume_sheets = int(curr['Volume'] / 1000)
         
-        # 前波高點計算 (60日)
         high_60d = float(data['High'].tail(60).max())
         dist_to_high = ((high_60d - price) / high_60d) * 100
 
-        # --- 4. 指標儀表板 ---
+        # --- 4. 指標儀表板 (台股顏色修正) ---
         st.subheader(f"📊 {ticker_input} 即時概況")
         m1, m2, m3, m4, m5, m6 = st.columns(6)
-        m1.metric("當前股價", f"{price:.2f}", f"{price - float(prev['Close']):.2f}",delta_color="inverse")
+        # delta_color="inverse" 讓上漲變紅
+        m1.metric("當前股價", f"{price:.2f}", f"{price - float(prev['Close']):.2f}", delta_color="inverse")
         m2.metric("前波高點", f"{high_60d:.2f}")
         m3.metric("挑戰進度", f"{100 - dist_to_high:.1f}%")
         m4.metric("5日均線", f"{float(curr['MA5']):.2f}")
@@ -115,13 +140,11 @@ if ticker_input:
         try:
             info = ticker_obj.info
             current_price = info.get('currentPrice') or price
-            eps = info.get('trailingEps') # 過去四季累積 EPS
+            eps = info.get('trailingEps')
             
             if eps and eps > 0:
-                # 取得歷史價格資料來計算本益比區間 (過去一年)
                 hist_1y = ticker_obj.history(period="1y")
                 hist_pe = hist_1y['Close'] / eps
-                
                 avg_pe = hist_pe.mean()
                 max_pe = hist_pe.max()
                 min_pe = hist_pe.min()
@@ -134,7 +157,7 @@ if ticker_input:
                 c1, c2, c3 = st.columns(3)
                 c1.metric("便宜價", f"{cheap_price:.2f}")
                 c2.metric("合理價", f"{fair_price:.2f}")
-                c3.metric("昂貴價", f"{expensive_price:.2f}")
+                c3.metric("昂備價", f"{expensive_price:.2f}")
                 
                 st.write(f"目前股價: **{current_price}** | 目前本益比: **{current_pe:.2f}**")
                 
@@ -149,32 +172,34 @@ if ticker_input:
                 position = max(0, min(position, 1.0))
                 st.write("📈 目前股價在年度高低位階：")
                 st.progress(position)
-                st.caption(f"左側為年度最低 ({min_pe*eps:.1f})，右側為年度最高 ({max_pe*eps:.1f})")
             else:
-                st.info("💡 該公司目前虧損或無 EPS 資料，改看股價淨值比 (P/B)。")
-                pb = info.get('priceToBook')
-                if pb:
-                    st.write(f"目前 P/B: **{pb:.2f}**")
-                    if pb < 1.0: st.success("📉 股價低於淨值。")
-        except Exception as e:
+                st.info("💡 該公司目前虧損或無 EPS 資料。")
+        except:
             st.info(f"估值數據暫時無法取得。")
 
-        # --- 5. 繪製 K 線圖 ---
+        # --- 5. 繪製 K 線圖 (台股顏色修正) ---
         fig = make_subplots(
             rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, 
             subplot_titles=(f'{ticker_input} K線與均線', '成交量'), 
             row_width=[0.3, 0.7]
         )
+        
+        # K線增加紅漲綠跌設定
         fig.add_trace(go.Candlestick(
             x=data.index, open=data['Open'], high=data['High'],
-            low=data['Low'], close=data['Close'], name="K線"
+            low=data['Low'], close=data['Close'], name="K線",
+            increasing_line_color='red',   # 上漲紅
+            decreasing_line_color='green'  # 下跌綠
         ), row=1, col=1)
+        
         fig.add_trace(go.Scatter(x=data.index, y=data['MA5'], line=dict(color='#17becf', width=1.5), name="5MA"), row=1, col=1)
         fig.add_trace(go.Scatter(x=data.index, y=data['MA20'], line=dict(color='#ff7f0e', width=2), name="20MA"), row=1, col=1)
         fig.add_trace(go.Scatter(x=data.index, y=data['MA60'], line=dict(color='#9467bd', width=2), name="60MA"), row=1, col=1)
         fig.add_hline(y=high_60d, line_dash="dot", line_color="yellow", annotation_text="前高壓力", row=1, col=1)
 
+        # 成交量顏色修正：上漲紅、下跌綠
         colors = ['red' if row['Close'] >= row['Open'] else 'green' for _, row in data.iterrows()]
+        
         fig.add_trace(go.Bar(x=data.index, y=data['Volume'], name="成交量", marker_color=colors, opacity=0.7), row=2, col=1)
         fig.update_layout(xaxis_rangeslider_visible=False, height=600, template="plotly_dark")
         st.plotly_chart(fig, use_container_width=True)
@@ -182,7 +207,7 @@ if ticker_input:
         # --- 6. 三大法人籌碼 ---
         st.write("---")
         st.subheader("👥 昨日三大法人買賣數據 (張)")
-        f_net = 0 # 預設值
+        f_net = 0
         try:
             target_id = ticker_input.split('.')[0]
             df_chip = dl.taiwan_stock_institutional_investors(
@@ -250,22 +275,13 @@ if ticker_input:
         # --- 9. 賣出與風險控管 ---
         st.write("---")
         st.subheader("🚩 賣出建議與風險控管")
-        if ticker_input in my_costs:
+        if ticker_input in st.session_state.db["costs"]:
             p_l_ratio = ((price - cost) / cost) * 100
             st.write(f"**💰 目前損益：{p_l_ratio:.2f}%**")
             if p_l_ratio >= 15: st.warning("⚠️ 獲利超過 15%，建議先入袋一部分。")
             elif p_l_ratio <= -8: st.error("🚨 虧損達 8%，請考慮停損。")
 
-        # --- 10. 動能強度 ---
-        st.write("---")
-        st.subheader(f"⚡ {ticker_input} 動能強度偵測")
-        avg_vol_5d = data['Volume'].tail(6).iloc[:-1].mean() 
-        vol_ratio = curr['Volume'] / avg_vol_5d
-        st.metric("成交量倍數", f"{vol_ratio:.2f} x")
-        if vol_ratio >= 2.0: st.error("🔥 爆量攻擊訊號！")
-        elif vol_ratio <= 0.5: st.info("😴 目前人氣渙散。")
-
-# --- 新聞區 (放在最下方) ---
+# --- 新聞區 ---
 if show_news and ticker_input:
     st.write("---")
     st.subheader("📰 台灣產經新聞")
@@ -281,8 +297,5 @@ if show_news and ticker_input:
                     link = row.get('link')
                     if link and str(link) != 'nan':
                         st.markdown(f'[📖 閱讀原文]({link})')
-                    else:
-                        st.markdown(f"[🔍 Google 搜尋](https://www.google.com/search?q={row['clean_title']})")
-    except Exception as e:
-
-        st.error(f"新聞抓取失敗: {e}")
+    except:
+        st.error("新聞抓取失敗")
