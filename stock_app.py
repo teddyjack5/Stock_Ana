@@ -153,7 +153,6 @@ if not is_authenticated:
 active_list = st.session_state.db["list"]
 active_costs = st.session_state.db["costs"]
 
-price = 0.0
 # --- 3. 庫存總體檢計算 ---
 total_portfolio_cost = 0.0
 total_portfolio_market_value = 0.0
@@ -265,45 +264,50 @@ if st.sidebar.button("💾 儲存帳務"):
 show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
 
 # --- 5. 獲利試算區 ---
-if ticker_input in active_costs:
-    st.write("---")
-    stock_info = active_costs[ticker_input]
-            
-    # 確保取得正確的成本與張數 (相容不同儲存格式)
-    c = stock_info['cost'] if isinstance(stock_info, dict) else stock_info
-    q = stock_info['qty'] if isinstance(stock_info, dict) else 1.0
-            
-    if c > 0:
-        # 計算邏輯 (維持不變)
-        total_cost = c * q * 1000
-        current_val = price * q * 1000
-        profit = current_val - total_cost
-        profit_rate = (profit / total_cost) * 100 if total_cost > 0 else 0
-                
-        # --- 修改亮點：將 (分類: {current_group}) 改為 (帳戶: {current_db_file}) ---
-        display_filename = current_db_file.replace('.json', '')
-        st.subheader(f"💰 個股損益試算 (帳戶: {display_filename})")
+if ticker_input:
+    # 先下載數據，確保 price 變數在損益計算前已存在
+    data = yf.download(ticker_input, period=period)
+    
+    if not data.empty:
+        # --- 核心修正：定義當前價格 ---
+        curr = data.iloc[-1]
+        prev = data.iloc[-2]
+        price = float(curr['Close']) # 確保這裡先取得價格
         
-        # 獲利紅色，虧損綠色，平盤白色
-        p_color = "#FF4B4B" if profit > 0 else ("#00B050" if profit < 0 else "#FFFFFF")
+        # 進行個股損益計算
+        if ticker_input in active_costs:
+            st.write("---")
+            stock_info = active_costs[ticker_input]
+            
+            # 確保取得正確的成本與張數
+            c = stock_info['cost'] if isinstance(stock_info, dict) else stock_info
+            q = stock_info['qty'] if isinstance(stock_info, dict) else 1.0
+            
+            if c > 0:
+                total_cost = c * q * 1000
+                current_val = price * q * 1000
+                profit = current_val - total_cost
+                profit_rate = (profit / total_cost) * 100 if total_cost > 0 else 0
                 
-        i1, i2, i3 = st.columns(3)
+                display_filename = current_db_file.replace('.json', '')
+                st.subheader(f"💰 個股損益試算 (帳戶: {display_filename})")
                 
-        # 1. 預估損益 (自訂 HTML)
-        with i1:
-            st.markdown(f"""
-                <div style="text-align: left;">
-                <p style="color: gray; font-size: 16px; margin-bottom: 0px;">預估損益 (報酬率)</p>
-                <p style="color: {p_color}; font-size: 30px; font-weight: bold; margin-top: -5px;">
-                        {"+" if profit > 0 else ""}{int(profit):,} 
-                        <span style="font-size: 18px;">({profit_rate:.2f}%)</span>
-                    </p>
-                </div>
-            """, unsafe_allow_html=True)
+                p_color = "#FF4B4B" if profit > 0 else ("#00B050" if profit < 0 else "#FFFFFF")
                 
-        # 2. 投入本金與市值
-        i2.metric("投入本金", f"NT$ {int(total_cost):,}")
-        i3.metric("目前市值", f"NT$ {int(current_val):,}")
+                i1, i2, i3 = st.columns(3)
+                with i1:
+                    st.markdown(f"""
+                        <div style="text-align: left;">
+                        <p style="color: gray; font-size: 16px; margin-bottom: 0px;">預估損益 (報酬率)</p>
+                        <p style="color: {p_color}; font-size: 30px; font-weight: bold; margin-top: -5px;">
+                                {"+" if profit > 0 else ""}{int(profit):,} 
+                                <span style="font-size: 18px;">({profit_rate:.2f}%)</span>
+                            </p>
+                        </div>
+                    """, unsafe_allow_html=True)
+                
+                i2.metric("投入本金", f"NT$ {int(total_cost):,}")
+                i3.metric("目前市值", f"NT$ {int(current_val):,}")
 
 # --- 3. 計算函數 ---
 def calculate_rsi(df, periods=14):
