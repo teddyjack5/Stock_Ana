@@ -137,14 +137,6 @@ if 'init_run' not in st.session_state:
 # --- 2. 側邊欄：資料庫檔案切換 ---
 st.sidebar.title("📁 庫存管理")
 
-with st.sidebar.expander("🛠️ API 狀態檢查"):
-    if st.button("測試 FinMind 連線"):
-        test_df = dl.taiwan_stock_holding_shares_per(stock_id="2330", start_date="2026-01-01")
-        if test_df is not None and not test_df.empty:
-            st.success("連線正常！")
-        else:
-            st.error("Token 可能失效或已達今日上限。")
-
 # 獲取目前資料夾所有 .json 檔案
 db_files = [f for f in os.listdir('.') if f.endswith('.json') and f != "package.json"]
 if not db_files:
@@ -817,4 +809,5 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
