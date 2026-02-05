@@ -618,11 +618,6 @@ if ticker_input:
                     cols[i].metric(m['label'], f"{val:.1f}{m['suffix']}")
                 else:
                     cols[i].metric(m['label'], "N/A")
-                    
-            # 💡 小偵探：如果出錯，讓開發者在畫面上看到到底有哪些欄位
-            with st.expander("🔍 營收資料欄位診斷"):
-                st.write("目前抓到的欄位有：", df_rev.columns.tolist())
-                st.dataframe(df_rev.tail(3))
         else:
             st.info("無法取得月營收資料。")
         # --- 6. 繪製圖表 ---
@@ -870,4 +865,5 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
