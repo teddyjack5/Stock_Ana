@@ -415,19 +415,32 @@ def calculate_atr(df, window=14):
     true_range = ranges.max(axis=1)
     return true_range.rolling(window=window).mean()
 def get_foreign_holding(stock_id, days=180):
+    # 1. 處理代號：FinMind 不需要 .TW
+    clean_id = stock_id.split('.')[0]
     start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+    
     try:
-        # 抓取外資持股比率
+        # 使用 taiwan_stock_holding_shares_per (持股比例表)
         df_holding = dl.taiwan_stock_holding_shares_per(
-            stock_id=stock_id.split('.')[0],
+            stock_id=clean_id,
             start_date=start_date
         )
-        if not df_holding.empty:
+        
+        if df_holding is not None and not df_holding.empty:
+            # 確保日期格式正確
             df_holding['date'] = pd.to_datetime(df_holding['date'])
+            # 依日期排序，避免繪圖交錯
+            df_holding = df_holding.sort_values('date')
             return df_holding
-    except:
+        else:
+            # 如果上面那個沒抓到，嘗試抓取「三大法人持股」另一個表
+            # 這通常是備援機制
+            st.warning(f"偵測到 {clean_id} 比例表為空，嘗試查詢持股張數...")
+            return pd.DataFrame()
+            
+    except Exception as e:
+        st.error(f"FinMind 連線異常: {e}")
         return pd.DataFrame()
-    return pd.DataFrame()
 
 if ticker_input:
     data = yf.download(ticker_input, period=period)
@@ -506,60 +519,50 @@ if ticker_input:
         except:
             st.error("籌碼抓取失敗")
 
-        # --- 6.5 外資持股比例變動繪圖 ---
+        # --- 6.5 外資持股變動繪圖 ---
         st.write("---")
-        st.subheader("🏛️ 外資持股中長期變動趨勢")
+        st.subheader("🏛️ 外資持股趨勢分析")
         
         df_holding = get_foreign_holding(ticker_input)
         
         if not df_holding.empty:
-            # 建立雙軸圖：股價 vs 外資持股比率
-            fig_holding = make_subplots(specs=[[{"secondary_y": True}]])
+            # --- 偵測欄位名稱 (除錯用，跑通後可刪除) ---
+            # st.write(df_holding.columns.tolist()) 
             
-            # 1. 繪製收盤價 (淺灰色背景線)
-            fig_holding.add_trace(
-                go.Scatter(x=data.index, y=data['Close'], name="股價", 
-                           line=dict(color='rgba(200, 200, 200, 0.5)', width=1)),
-                secondary_y=False
-            )
+            # 定義外資持股比率欄位 (FinMind 常見名稱: ForeignInvestmentSharesRatio)
+            target_col = 'ForeignInvestmentSharesRatio'
             
-            # 2. 繪製外資持股比率 (藍色面積圖)
-            fig_holding.add_trace(
-                go.Scatter(
-                    x=df_holding['date'], 
-                    y=df_holding['ForeignInvestmentSharesRatio'], 
-                    name="外資持股比例(%)",
-                    fill='tozeroy',
-                    line=dict(color='#00B0F6', width=2),
-                    fillcolor='rgba(0, 176, 246, 0.2)'
-                ),
-                secondary_y=True
-            )
-            
-            fig_holding.update_layout(
-                height=400,
-                template="plotly_dark",
-                hovermode="x unified",
-                margin=dict(l=20, r=20, t=30, b=20),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
-            
-            fig_holding.update_yaxes(title_text="股價", secondary_y=False, showgrid=False)
-            fig_holding.update_yaxes(title_text="外資持股 %", secondary_y=True, showgrid=True, gridcolor='#333')
-            
-            st.plotly_chart(fig_holding, use_container_width=True)
-            
-            # 計算趨勢文字
-            h_latest = df_holding['ForeignInvestmentSharesRatio'].iloc[-1]
-            h_prev = df_holding['ForeignInvestmentSharesRatio'].iloc[-10] # 約兩週前
-            h_diff = h_latest - h_prev
-            
-            if h_diff > 0.5:
-                st.success(f"💡 外資近期顯著加碼：近兩週持股比例上升了 {h_diff:.2f}%。")
-            elif h_diff < -0.5:
-                st.warning(f"💡 外資近期持續撤出：近兩週持股比例下降了 {abs(h_diff):.2f}%。")
+            if target_col in df_holding.columns:
+                fig_holding = make_subplots(specs=[[{"secondary_y": True}]])
+                
+                # 股價線
+                fig_holding.add_trace(
+                    go.Scatter(x=data.index, y=data['Close'], name="股價", 
+                               line=dict(color='rgba(200, 200, 200, 0.4)', width=1)),
+                    secondary_y=False
+                )
+                
+                # 外資持股面積圖
+                fig_holding.add_trace(
+                    go.Scatter(
+                        x=df_holding['date'], 
+                        y=df_holding[target_col], 
+                        name="外資持股 %",
+                        fill='tozeroy',
+                        line=dict(color='#00CCFF', width=2),
+                        fillcolor='rgba(0, 204, 255, 0.15)'
+                    ),
+                    secondary_y=True
+                )
+                
+                fig_holding.update_layout(height=400, template="plotly_dark", hovermode="x unified")
+                fig_holding.update_yaxes(title_text="外資持股 %", secondary_y=True, showgrid=True)
+                
+                st.plotly_chart(fig_holding, use_container_width=True)
+            else:
+                st.warning(f"抓到資料但找不到欄位 {target_col}，請檢查 API 回傳結構。")
         else:
-            st.info("無法取得外資持股比例歷史資料。")
+            st.info("無法從 FinMind 取得該股外資持股歷史資料，請確認 API Token 是否有效或該股是否有外資參與。")
 
         # --- 6. 繪製圖表 ---
         fig = make_subplots(
