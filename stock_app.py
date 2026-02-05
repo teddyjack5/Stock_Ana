@@ -64,6 +64,12 @@ except:
 st.set_page_config(page_title="小鐵的股票分析報告", layout="wide")
 st.title("📈 小鐵的股票分析報告") 
 
+if 'init_run' not in st.session_state:
+    # 第一次執行時，強制給予一個空的資料結構
+    st.session_state.db = {"password_hash": None, "list": {}, "costs": {}}
+    st.session_state.current_file = "未選取檔案"
+    st.session_state.init_run = True # 標記已啟動過
+
 # --- 2. 側邊欄：資料庫檔案切換 ---
 st.sidebar.title("📁 檔案管理")
 
@@ -74,6 +80,11 @@ if not db_files:
 
 current_db_file = st.sidebar.selectbox("📂 切換帳戶檔案", db_files)
 
+# 當使用者「手動」切換檔案時，才去讀取 JSON
+if st.session_state.get('current_file') != current_db_file:
+    st.session_state.db = load_db(current_db_file)
+    st.session_state.current_file = current_db_file
+
 # 新增帳戶檔案
 new_db_name = st.sidebar.text_input("➕ 建立新帳戶名稱", placeholder="例如: 退休基金")
 if st.sidebar.button("建立新帳戶"):
@@ -82,6 +93,25 @@ if st.sidebar.button("建立新帳戶"):
         empty_data = {"list": {}, "costs": {}}
         save_db(empty_data, full_name)
         st.rerun()
+
+# --- 💣 刪除檔案功能 ---
+st.sidebar.markdown("---")
+with st.sidebar.expander("🗑️ 危險區域 (刪除帳戶)"):
+    st.warning(f"確定要刪除【{current_db_file}】嗎？此動作無法復原！")
+    confirm_delete = st.checkbox("我確定要永久刪除此檔案")
+    if st.sidebar.button("💥 執行刪除", type="primary", disabled=not confirm_delete):
+        try:
+            # 至少保留一個檔案，不要全部刪光
+            if len(db_files) > 1:
+                os.remove(current_db_file)
+                st.success(f"已成功刪除 {current_db_file}")
+                # 清除 session_state 並重新整理
+                if 'db' in st.session_state: del st.session_state.db
+                st.rerun()
+            else:
+                st.error("這是最後一個檔案了，不能刪除喔！")
+        except Exception as e:
+            st.error(f"刪除失敗: {e}")
 
 st.sidebar.divider()
 
