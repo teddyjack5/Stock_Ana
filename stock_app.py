@@ -583,43 +583,59 @@ if ticker_input:
 
         # --- 6.6 月營收分析 ---
         st.write("---")
-        st.subheader("📈 月營收成長趨勢")
+        st.subheader("📈 月營收成長趨勢 (手動計算)")
         
         df_rev = get_monthly_revenue(ticker_input)
         
         if not df_rev.empty:
-            # 建立圖表... (保持原樣)
+            # 確保資料是按時間排序
+            df_rev = df_rev.sort_values('date')
+            
+            # --- 關鍵：自行計算成長率 ---
+            # 1. 計算月增率 (MoM): 跟前一列比
+            df_rev['computed_mom'] = df_rev['revenue'].pct_change(periods=1) * 100
+            
+            # 2. 計算年增率 (YoY): 跟前 12 列比 (去年同月)
+            df_rev['computed_yoy'] = df_rev['revenue'].pct_change(periods=12) * 100
+            
+            # --- 繪圖區 ---
             fig_rev = go.Figure()
-            fig_rev.add_trace(go.Bar(x=df_rev['date'], y=df_rev['revenue'], name="月營收", marker_color='rgba(0, 255, 150, 0.6)'))
+            # 營收長條圖
+            fig_rev.add_trace(go.Bar(x=df_rev['date'], y=df_rev['revenue'], name="月營收", marker_color='rgba(0, 255, 150, 0.4)'))
             
-            # 安全偵測 YoY 欄位並繪圖
-            yoy_col = 'revenue_year_growth_rate' if 'revenue_year_growth_rate' in df_rev.columns else None
-            if yoy_col:
-                fig_rev.add_trace(go.Scatter(x=df_rev['date'], y=df_rev[yoy_col], name="YoY (%)", line=dict(color='orange', width=2), yaxis="y2"))
+            # 年增率折線圖 (YoY)
+            fig_rev.add_trace(go.Scatter(
+                x=df_rev['date'], y=df_rev['computed_yoy'], 
+                name="YoY (自算 %)", line=dict(color='#FF4B4B', width=2), yaxis="y2"
+            ))
             
-            fig_rev.update_layout(height=400, template="plotly_dark", yaxis=dict(title="營收金額"), yaxis2=dict(title="YoY (%)", overlaying="y", side="right"))
+            fig_rev.update_layout(
+                height=400, template="plotly_dark",
+                yaxis=dict(title="營收金額"),
+                yaxis2=dict(title="YoY (%)", overlaying="y", side="right", showgrid=False),
+                legend=dict(orientation="h", y=1.1)
+            )
             st.plotly_chart(fig_rev, use_container_width=True)
             
-            # --- 關鍵修正：安全顯示 Metric ---
+            # --- 顯示數據指標 ---
             latest = df_rev.iloc[-1]
+            c1, c2, c3 = st.columns(3)
             
-            # 定義想要抓取的欄位與其對應的顯示名稱
-            metrics_to_show = [
-                {"label": "最新月營收", "key": "revenue", "suffix": " M", "div": 1000000},
-                {"label": "月增率 (MoM)", "key": "revenue_month_growth_rate", "suffix": "%", "div": 1},
-                {"label": "年增率 (YoY)", "key": "revenue_year_growth_rate", "suffix": "%", "div": 1}
-            ]
+            # 顯示金額 (轉成億元比較好讀)
+            rev_in_100m = latest['revenue'] / 100000000
+            c1.metric("最新月營收", f"{rev_in_100m:.2f} 億")
             
-            cols = st.columns(len(metrics_to_show))
-            for i, m in enumerate(metrics_to_show):
-                # 檢查欄位是否存在，不存在則顯示 "N/A"
-                if m['key'] in latest and pd.notnull(latest[m['key']]):
-                    val = float(latest[m['key']]) / m['div']
-                    cols[i].metric(m['label'], f"{val:.1f}{m['suffix']}")
-                else:
-                    cols[i].metric(m['label'], "N/A")
+            # 顯示自算的 MoM
+            mom_val = latest['computed_mom']
+            c2.metric("月增率 (MoM)", f"{mom_val:.2f}%" if pd.notnull(mom_val) else "N/A", delta=f"{mom_val:.1f}%" if pd.notnull(mom_val) else None)
+            
+            # 顯示自算的 YoY
+            yoy_val = latest['computed_yoy']
+            c3.metric("年增率 (YoY)", f"{yoy_val:.2f}%" if pd.notnull(yoy_val) else "N/A", delta=f"{yoy_val:.1f}%" if pd.notnull(yoy_val) else None)
+
         else:
-            st.info("無法取得月營收資料。")
+            st.info("暫無月營收數據可供計算。")
+            
         # --- 6. 繪製圖表 ---
         fig = make_subplots(
             rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.05,
@@ -865,5 +881,6 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
