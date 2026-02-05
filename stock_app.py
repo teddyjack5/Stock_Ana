@@ -153,6 +153,7 @@ if not is_authenticated:
 active_list = st.session_state.db["list"]
 active_costs = st.session_state.db["costs"]
 
+price = 0.0
 # --- 3. 庫存總體檢計算 ---
 total_portfolio_cost = 0.0
 total_portfolio_market_value = 0.0
