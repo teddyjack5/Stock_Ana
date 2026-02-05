@@ -71,14 +71,14 @@ if 'init_run' not in st.session_state:
     st.session_state.init_run = True # 標記已啟動過
 
 # --- 2. 側邊欄：資料庫檔案切換 ---
-st.sidebar.title("📁 檔案管理")
+st.sidebar.title("📁 庫存管理")
 
 # 獲取目前資料夾所有 .json 檔案
 db_files = [f for f in os.listdir('.') if f.endswith('.json') and f != "package.json"]
 if not db_files:
     db_files = ["my_stock_db.json"]
 
-current_db_file = st.sidebar.selectbox("📂 切換帳戶檔案", db_files)
+current_db_file = st.sidebar.selectbox("📂 切換帳戶庫存", db_files)
 
 # 當使用者「手動」切換檔案時，才去讀取 JSON
 if st.session_state.get('current_file') != current_db_file:
@@ -226,12 +226,16 @@ selected_ticker = st.sidebar.selectbox(
 )
 
 if st.sidebar.button(f"🗑️ 刪除所選股票"):
-    if selected_ticker in active_list:
-        del st.session_state.db["groups"][current_group]["list"][selected_ticker]
-        if selected_ticker in active_costs:
-            del st.session_state.db["groups"][current_group]["costs"][selected_ticker]
-        save_db(st.session_state.db)
-        st.rerun()
+    # --- 關鍵修正：直接從第一層的 list 和 costs 刪除 ---
+    if selected_ticker in st.session_state.db["list"]:
+        del st.session_state.db["list"][selected_ticker]
+        
+    if selected_ticker in st.session_state.db["costs"]:
+        del st.session_state.db["costs"][selected_ticker]
+        
+    save_db(st.session_state.db, current_db_file)
+    st.success(f"已從 {current_db_file} 移除 {selected_ticker}")
+    st.rerun()
 
 st.sidebar.markdown("---")
 custom_ticker = st.sidebar.text_input("🔍 全域搜尋 (不加入庫存)", "")
@@ -242,14 +246,20 @@ period = st.sidebar.selectbox("分析時間範圍", ["5d", "1mo", "6mo", "1y", "
 # D. 帳務管理
 st.sidebar.subheader(f"💰 {ticker_input} 帳務管理")
 stock_acc = active_costs.get(ticker_input, {"cost": 0.0, "qty": 1.0})
-if isinstance(stock_acc, (float, int)): stock_acc = {"cost": stock_acc, "qty": 1.0}
-buy_cost = st.sidebar.number_input("買入單價", value=float(stock_acc['cost']))
-buy_qty = st.sidebar.number_input("持有張數", value=float(stock_acc['qty']), step=1.0)
+
+# 確保格式正確
+if isinstance(stock_acc, (float, int)): 
+    stock_acc = {"cost": stock_acc, "qty": 1.0}
+
+buy_cost = st.sidebar.number_input("買入單價", value=float(stock_acc['cost']), key="buy_cost")
+buy_qty = st.sidebar.number_input("持有張數", value=float(stock_acc['qty']), step=1.0, key="buy_qty")
 
 if st.sidebar.button("💾 儲存帳務"):
-    st.session_state.db["groups"][current_group]["costs"][ticker_input] = {"cost": buy_cost, "qty": buy_qty}
-    save_db(st.session_state.db)
-    st.sidebar.success("帳務已更新！")
+    # --- 關鍵修正：移除 ["groups"][current_group] ---
+    st.session_state.db["costs"][ticker_input] = {"cost": buy_cost, "qty": buy_qty}
+    save_db(st.session_state.db, current_db_file)
+    st.sidebar.success("✅ 帳務已更新！")
+    st.rerun()
 
 show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
 
