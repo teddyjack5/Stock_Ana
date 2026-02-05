@@ -53,7 +53,7 @@ def save_db(data, filename):
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-@st.dialog("📋 全帳戶個股損益明細")
+@st.dialog("📋 全帳戶個股損益明細", width="large")
 def show_full_portfolio_report(active_costs, active_list):
     if not active_costs:
         st.warning("目前庫存中沒有帳務資料。")
@@ -722,3 +722,4 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
