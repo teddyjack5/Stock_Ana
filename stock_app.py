@@ -445,6 +445,33 @@ def get_foreign_holding(stock_id, days=180):
         
     return pd.DataFrame()
 
+def get_monthly_revenue(stock_id):
+    clean_id = stock_id.split('.')[0]
+    # 月營收通常看長一點，抓 24 個月 (兩年) 比較好分析 YoY
+    start_date = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')
+    
+    url = "https://api.finmindtrade.com/api/v4/data"
+    parameter = {
+        "dataset": "TaiwanStockMonthRevenue",
+        "data_id": clean_id,
+        "start_date": start_date,
+        "token": FINMIND_TOKEN,
+    }
+    
+    try:
+        resp = requests.get(url, params=parameter)
+        data_json = resp.json()
+        
+        if "data" in data_json and data_json["data"]:
+            df = pd.DataFrame(data_json["data"])
+            # 轉換日期格式
+            df['date'] = pd.to_datetime(df['revenue_year'].astype(str) + '-' + df['revenue_month'].astype(str) + '-01')
+            return df.sort_values('date')
+    except Exception as e:
+        st.error(f"月營超抓取失敗: {e}")
+        
+    return pd.DataFrame()
+
 if ticker_input:
     data = yf.download(ticker_input, period=period)
     if not data.empty:
@@ -553,6 +580,53 @@ if ticker_input:
         else:
             # 如果真的抓不到，就安靜地顯示一個小提示，或是直接跳過
             st.caption("ℹ️ 目前無法取得外資詳細持股比例 (可能受限於 API 權限)")
+
+        # --- 6.6 月營收分析 ---
+        st.write("---")
+        st.subheader("📈 月營收成長趨勢")
+        
+        df_rev = get_monthly_revenue(ticker_input)
+        
+        if not df_rev.empty:
+            fig_rev = go.Figure()
+            
+            # 柱狀圖：月營收金額
+            fig_rev.add_trace(go.Bar(
+                x=df_rev['date'], 
+                y=df_rev['revenue'],
+                name="月營收",
+                marker_color='rgba(0, 255, 150, 0.6)'
+            ))
+            
+            # 折線圖：年增率 (YoY)
+            # FinMind 的月營收表通常已內建 'revenue_year_growth_rate' 欄位
+            if 'revenue_year_growth_rate' in df_rev.columns:
+                fig_rev.add_trace(go.Scatter(
+                    x=df_rev['date'], 
+                    y=df_rev['revenue_year_growth_rate'],
+                    name="YoY (%)",
+                    line=dict(color='orange', width=2),
+                    yaxis="y2"
+                ))
+            
+            fig_rev.update_layout(
+                height=400,
+                template="plotly_dark",
+                yaxis=dict(title="營收金額"),
+                yaxis2=dict(title="YoY (%)", overlaying="y", side="right"),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            
+            st.plotly_chart(fig_rev, use_container_width=True)
+            
+            # 顯示最近一月的營收簡報
+            latest = df_rev.iloc[-1]
+            col1, col2, col3 = st.columns(3)
+            col1.metric("最新月營收", f"{latest['revenue']/1000000:.1f} M")
+            col2.metric("月增率 (MoM)", f"{latest['revenue_month_growth_rate']:.1f}%")
+            col3.metric("年增率 (YoY)", f"{latest['revenue_year_growth_rate']:.1f}%")
+        else:
+            st.info("無法取得月營收資料，請檢查 API 額度或股票代號。")
 
         # --- 6. 繪製圖表 ---
         fig = make_subplots(
