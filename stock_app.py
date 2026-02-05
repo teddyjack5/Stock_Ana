@@ -53,6 +53,70 @@ def save_db(data, filename):
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
+@st.dialog("📋 全帳戶個股損益明細")
+def show_full_portfolio_report(active_costs, active_list):
+    if not active_costs:
+        st.warning("目前庫存中沒有帳務資料。")
+        return
+
+    report_data = []
+    with st.spinner("正在獲取最新報價..."):
+        for t_code, info in active_costs.items():
+            try:
+                # 抓取即時價格
+                tick = yf.Ticker(t_code)
+                # 為了速度，抓取最近一筆即可
+                df_recent = tick.history(period="1d")
+                if df_recent.empty: continue
+                
+                c_price = df_recent['Close'].iloc[-1]
+                name = active_list.get(t_code, "未知")
+                cost = info['cost']
+                qty = info['qty']
+                
+                total_cost = cost * qty * 1000
+                market_value = c_price * qty * 1000
+                diff = market_value - total_cost
+                roi = (diff / total_cost * 100) if total_cost > 0 else 0
+                
+                report_data.append({
+                    "代號": t_code,
+                    "名稱": name,
+                    "成本價": f"{cost:.2f}",
+                    "現價": f"{c_price:.2f}",
+                    "張數": qty,
+                    "投入本金": int(total_cost),
+                    "目前市值": int(market_value),
+                    "損益": int(diff),
+                    "報酬率": f"{roi:.2f}%"
+                })
+            except:
+                continue
+
+    if report_data:
+        df_report = pd.DataFrame(report_data)
+        
+        # 建立美化表格
+        def color_profit(val):
+            if isinstance(val, int):
+                color = 'red' if val > 0 else 'green' if val < 0 else 'white'
+                return f'color: {color}'
+            return ''
+
+        # 顯示總覽表格
+        st.dataframe(
+            df_report.style.applymap(color_profit, subset=['損益']),
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # 額外小統計
+        total_p = sum(d['損益'] for d in report_data)
+        st.divider()
+        st.metric("合計預估總損益", f"NT$ {total_p:,}", delta=f"{total_p:,}")
+    else:
+        st.error("無法取得即時資料，請檢查網路連線。")
+
 # --- 1. 配置 FinMind ---
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMS0yOCAwODoyNToyNyIsInVzZXJfaWQiOiJ0ZWRkeWphY2siLCJlbWFpbCI6InRlZGR5amFjazVAeWFob28uY29tLnR3IiwiaXAiOiI0Mi43Mi4yMTEuMTUzIn0.Su4W8X5E9XPN9PZdA03Z6XO6i630kOSvOjcrLowcO-I"
 dl = DataLoader()
@@ -204,6 +268,10 @@ st.markdown(f"""
         </div>
     </div>
 """, unsafe_allow_html=True)
+
+st.sidebar.subheader("📊 帳戶報表")
+if st.sidebar.button("🔍 查看所有個股損益", use_container_width=True):
+    show_full_portfolio_report(active_costs, active_list)
 
 # --- 5. 庫存管理 ---
 st.sidebar.subheader("📍 管理庫存股票")
