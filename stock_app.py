@@ -301,7 +301,9 @@ def sync_stock_data():
 selected_ticker = st.sidebar.selectbox(
     "選取庫存股票", 
     list(active_list.keys()), 
-    format_func=lambda x: f"{x} {active_list[x]}" if x in active_list else x
+    format_func=lambda x: f"{x} {active_list[x]}" if x in active_list else x,
+    key="selected_ticker_key",    # 必須對應 sync_stock_data 裡的 t_key = st.session_state.selected_ticker_key
+    on_change=sync_stock_data     # 這是啟動自動更新的開關
 )
 
 if st.sidebar.button(f"🗑️ 刪除所選股票"):
