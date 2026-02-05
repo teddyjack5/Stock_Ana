@@ -4,40 +4,54 @@ import plotly.graph_objects as go
 import pandas as pd
 import json
 import os
+import hashlib
 from datetime import datetime, timedelta
 from FinMind.data import DataLoader
 from plotly.subplots import make_subplots
 
 # --- 0. 資料庫功能設定 ---
-DB_FILE = "my_stock_db.json"
-
-def load_db():
+def hash_password(password):
+    if not password: return None
+    return hashlib.sha256(password.encode()).hexdigest()
+def load_db(filename):
+    # 這是我們新版的標準結構
     default_data = {
-        "groups": {
-            "我的最愛": {
-                "list": {"2356.TW": "英業達", "0050.TW": "元大台灣50"},
-                "costs": {
-                    "2356.TW": {"cost": 49.0, "qty": 1.0},
-                    "0050.TW": {"cost": 70.0, "qty": 1.0}
-                }
-            }
-        },
-        "selected_group": "我的最愛"
+        "password_hash" : None,
+        "list": {"2356.TW": "英業達", "0050.TW": "元大台灣50"},
+        "costs": {
+            "2356.TW": {"cost": 49.0, "qty": 1.0},
+            "0050.TW": {"cost": 70.0, "qty": 1.0}
+        }
     }
-    if os.path.exists(DB_FILE):
+    
+    if os.path.exists(filename):
         try:
-            with open(DB_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
+            with open(filename, "r", encoding="utf-8") as f:
+                content = json.load(f)
+                
+                # --- 關鍵修正：自動轉換舊格式 ---
+                if "groups" in content:
+                    # 如果是舊格式，抓取「我的最愛」裡面的內容來救資料
+                    first_group_name = list(content["groups"].keys())[0]
+                    st.toast(f"偵測到舊版格式，已自動轉換帳戶：{first_group_name}")
+                    return {
+                        "list": content["groups"][first_group_name].get("list", {}),
+                        "costs": content["groups"][first_group_name].get("costs", {})
+                    }
+                
+                # 如果新格式缺少 list 或 costs，補上空的以免噴錯
+                if "list" not in content: content["list"] = {}
+                if "costs" not in content: content["costs"] = {}
+                
+                return content
+        except Exception as e:
+            st.error(f"讀取 JSON 出錯: {e}")
             return default_data
     return default_data
 
-def save_db(data):
-    with open(DB_FILE, "w", encoding="utf-8") as f:
+def save_db(data, filename):
+    with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
-
-if 'db' not in st.session_state:
-    st.session_state.db = load_db()
 
 # --- 1. 配置 FinMind ---
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMS0yOCAwODoyNToyNyIsInVzZXJfaWQiOiJ0ZWRkeWphY2siLCJlbWFpbCI6InRlZGR5amFjazVAeWFob28uY29tLnR3IiwiaXAiOiI0Mi43Mi4yMTEuMTUzIn0.Su4W8X5E9XPN9PZdA03Z6XO6i630kOSvOjcrLowcO-I"
@@ -50,34 +64,128 @@ except:
 st.set_page_config(page_title="小鐵的股票分析報告", layout="wide")
 st.title("📈 小鐵的股票分析報告") 
 
-# --- 2. 側邊欄管理 ---
-st.sidebar.title("🛠️ 小鐵的導航面板")
+# --- 2. 側邊欄：資料庫檔案切換 ---
+st.sidebar.title("📁 檔案管理")
 
-# A. 分類選擇
-all_groups = list(st.session_state.db["groups"].keys())
-current_group = st.sidebar.selectbox("選擇分類", all_groups)
+# 獲取目前資料夾所有 .json 檔案
+db_files = [f for f in os.listdir('.') if f.endswith('.json') and f != "package.json"]
+if not db_files:
+    db_files = ["my_stock_db.json"]
 
-new_group_name = st.sidebar.text_input("➕ 新增分類名稱")
-if st.sidebar.button("建立新分類"):
-    if new_group_name and new_group_name not in st.session_state.db["groups"]:
-        st.session_state.db["groups"][new_group_name] = {"list": {}, "costs": {}}
-        save_db(st.session_state.db)
+current_db_file = st.sidebar.selectbox("📂 切換帳戶檔案", db_files)
+
+# 新增帳戶檔案
+new_db_name = st.sidebar.text_input("➕ 建立新帳戶名稱", placeholder="例如: 退休基金")
+if st.sidebar.button("建立新帳戶"):
+    if new_db_name:
+        full_name = new_db_name if new_db_name.endswith('.json') else f"{new_db_name}.json"
+        empty_data = {"list": {}, "costs": {}}
+        save_db(empty_data, full_name)
         st.rerun()
 
 st.sidebar.divider()
-active_list = st.session_state.db["groups"][current_group]["list"]
-active_costs = st.session_state.db["groups"][current_group]["costs"]
 
-# B. 庫存管理
-st.sidebar.subheader(f"📍 管理【{current_group}】")
+# 載入當前選擇的檔案到 session_state
+if 'db' not in st.session_state or st.session_state.get('current_file') != current_db_file:
+    st.session_state.db = load_db(current_db_file)
+    st.session_state.current_file = current_db_file
+
+# --- 🔐 密碼驗證邏輯 ---
+is_authenticated = False
+db_data = st.session_state.db
+
+if db_data.get("password_hash") is None:
+    st.sidebar.info("🔓 此檔案尚未設置密碼")
+    if st.sidebar.checkbox("🔒 想要設置 4 位數密碼?"):
+        new_pwd = st.sidebar.text_input("輸入新密碼", type="password", max_chars=4)
+        if st.sidebar.button("確認設置密碼"):
+            st.session_state.db["password_hash"] = hash_password(new_pwd)
+            save_db(st.session_state.db, current_db_file)
+            st.success("密碼設置成功！")
+            st.rerun()
+    is_authenticated = True # 沒設密碼直接放行
+else:
+    input_pwd = st.sidebar.text_input("🔑 輸入 4 位數密碼解鎖", type="password", max_chars=4)
+    if input_pwd:
+        if hash_password(input_pwd) == db_data["password_hash"]:
+            st.sidebar.success("✅ 驗證通過")
+            is_authenticated = True
+        else:
+            st.sidebar.error("❌ 密碼錯誤")
+            is_authenticated = False
+
+# 攔截點：如果沒通過驗證，停止後續所有程式碼執行
+if not is_authenticated:
+    st.warning("🔒 請在左側輸入正確密碼以開啟【小鐵的股票分析報告】")
+    st.stop()
+
+# 簡化變數名稱，讓後面的程式碼不用改
+active_list = st.session_state.db["list"]
+active_costs = st.session_state.db["costs"]
+
+# --- 3. 庫存總體檢計算 ---
+total_portfolio_cost = 0.0
+total_portfolio_market_value = 0.0
+
+# 遍歷庫存進行加總 (這裡會針對當前選取的 JSON 檔計算)
+if active_costs:
+    with st.spinner(f"正在計算 {current_db_file} 的總損益..."):
+        for t_code, info in active_costs.items():
+            try:
+                temp_df = yf.download(t_code, period="1d", progress=False)
+                if not temp_df.empty:
+                    c_price = temp_df['Close'].iloc[-1]
+                    if isinstance(c_price, pd.Series): c_price = c_price.iloc[0]
+                    
+                    cost = info['cost'] if isinstance(info, dict) else info
+                    qty = info['qty'] if isinstance(info, dict) else 1.0
+                    
+                    total_portfolio_cost += cost * qty * 1000
+                    total_portfolio_market_value += c_price * qty * 1000
+            except:
+                continue
+
+# 計算總損益
+total_profit = total_portfolio_market_value - total_portfolio_cost
+total_profit_rate = (total_profit / total_portfolio_cost * 100) if total_portfolio_cost > 0 else 0
+
+# --- 4. 渲染總損益大卡片 ---
+st.write(f"### 🏢 帳戶總覽：{current_db_file.replace('.json', '')}")
+p_color = "#FF4B4B" if total_profit > 0 else ("#00B050" if total_profit < 0 else "#FFFFFF")
+
+st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%); 
+                padding: 25px; border-radius: 20px; border-left: 10px solid {p_color}; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-around; align-items: center;">
+            <div style="text-align: left;">
+                <p style="color: #AAAAAA; font-size: 14px; margin: 0;">資產總市值</p>
+                <h2 style="color: white; margin: 0;">NT$ {int(total_portfolio_market_value):,}</h2>
+            </div>
+            <div style="text-align: center; border-left: 1px solid #444; border-right: 1px solid #444; padding: 0 30px;">
+                <p style="color: #AAAAAA; font-size: 14px; margin: 0;">預估總損益</p>
+                <h1 style="color: {p_color}; margin: 0; font-size: 36px;">
+                    {"+" if total_profit > 0 else ""}{int(total_profit):,}
+                </h1>
+            </div>
+            <div style="text-align: right;">
+                <p style="color: #AAAAAA; font-size: 14px; margin: 0;">總報酬率</p>
+                <h2 style="color: {p_color}; margin: 0;">{total_profit_rate:.2f}%</h2>
+            </div>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
+
+# --- 5. 庫存管理 ---
+st.sidebar.subheader("📍 管理庫存股票")
 col_id, col_name = st.sidebar.columns(2)
-m_id = col_id.text_input("代號", placeholder="2330.TW", key="m_id").upper()
-m_name = col_name.text_input("名稱", placeholder="台積電", key="m_name")
+m_id = col_id.text_input("代號", placeholder="2330.TW").upper()
+m_name = col_name.text_input("名稱", placeholder="台積電")
 
-if st.sidebar.button("➕ 加入此分類"):
+if st.sidebar.button("➕ 加入此帳戶"):
     if m_id and m_name:
-        st.session_state.db["groups"][current_group]["list"][m_id] = m_name
-        save_db(st.session_state.db)
+        st.session_state.db["list"][m_id] = m_name
+        save_db(st.session_state.db, current_db_file)
+        st.success(f"已加入 {current_db_file}")
         st.rerun()
 
 # C. 股票選取 (核心修改：先選取再搜尋)
@@ -424,26 +532,26 @@ if ticker_input:
     </div>
 """, unsafe_allow_html=True)
 
-
-        # --- 8. 籌碼動向 (單獨一橫條，看起來更清楚) ---
-        st.write("") 
-        with st.expander("🔍 查看詳細籌碼與數據細節", expanded=False):
-             # 這裡可以放入之前的籌碼數據與數據日期
-             st.write(f"當前 DIF: `{curr_macd:.2f}` | Signal: `{curr_sig:.2f}`")
-
         # --- 5. 獲利試算區 ---
         if ticker_input in active_costs:
             st.write("---")
             stock_info = active_costs[ticker_input]
+            
+            # 確保取得正確的成本與張數 (相容不同儲存格式)
             c = stock_info['cost'] if isinstance(stock_info, dict) else stock_info
             q = stock_info['qty'] if isinstance(stock_info, dict) else 1.0
+            
             if c > 0:
+                # 計算邏輯 (維持不變)
                 total_cost = c * q * 1000
                 current_val = price * q * 1000
                 profit = current_val - total_cost
                 profit_rate = (profit / total_cost) * 100 if total_cost > 0 else 0
                 
-                st.subheader(f"💰 投資損益試算 (分類: {current_group})")
+                # --- 修改亮點：將 (分類: {current_group}) 改為 (帳戶: {current_db_file}) ---
+                display_filename = current_db_file.replace('.json', '')
+                st.subheader(f"💰 個股損益試算 (帳戶: {display_filename})")
+                
                 # 獲利紅色，虧損綠色，平盤白色
                 p_color = "#FF4B4B" if profit > 0 else ("#00B050" if profit < 0 else "#FFFFFF")
                 
@@ -455,13 +563,15 @@ if ticker_input:
                         <div style="text-align: left;">
                             <p style="color: gray; font-size: 16px; margin-bottom: 0px;">預估損益 (報酬率)</p>
                             <p style="color: {p_color}; font-size: 30px; font-weight: bold; margin-top: -5px;">
-                                {int(profit):,} <span style="font-size: 18px;">({profit_rate:.2f}%)</span>
+                                {"+" if profit > 0 else ""}{int(profit):,} 
+                                <span style="font-size: 18px;">({profit_rate:.2f}%)</span>
                             </p>
                         </div>
                     """, unsafe_allow_html=True)
-                i2.metric("投入本金", f"{int(total_cost):,}")
-                i3.metric("目前市值", f"{int(current_val):,}")
-
+                
+                # 2. 投入本金與市值
+                i2.metric("投入本金", f"NT$ {int(total_cost):,}")
+                i3.metric("目前市值", f"NT$ {int(current_val):,}")
 
 # --- 9. 新聞區 ---
 if show_news and ticker_input:
