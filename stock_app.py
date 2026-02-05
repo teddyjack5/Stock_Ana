@@ -415,31 +415,31 @@ def calculate_atr(df, window=14):
     true_range = ranges.max(axis=1)
     return true_range.rolling(window=window).mean()
 def get_foreign_holding(stock_id, days=180):
-    # 1. 處理代號：FinMind 不需要 .TW
     clean_id = stock_id.split('.')[0]
     start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
     
     try:
-        # 使用 taiwan_stock_holding_shares_per (持股比例表)
-        df_holding = dl.taiwan_stock_holding_shares_per(
+        # 直接呼叫 API 獲取原始內容
+        raw_data = dl.taiwan_stock_holding_shares_per(
             stock_id=clean_id,
             start_date=start_date
         )
         
-        if df_holding is not None and not df_holding.empty:
-            # 確保日期格式正確
-            df_holding['date'] = pd.to_datetime(df_holding['date'])
-            # 依日期排序，避免繪圖交錯
-            df_holding = df_holding.sort_values('date')
-            return df_holding
-        else:
-            # 如果上面那個沒抓到，嘗試抓取「三大法人持股」另一個表
-            # 這通常是備援機制
-            st.warning(f"偵測到 {clean_id} 比例表為空，嘗試查詢持股張數...")
+        # 檢查回傳是否為 None 或空 DataFrame
+        if raw_data is None or raw_data.empty:
             return pd.DataFrame()
             
+        # 確保資料中有我們需要的日期和比例欄位
+        if 'date' in raw_data.columns and 'ForeignInvestmentSharesRatio' in raw_data.columns:
+            raw_data['date'] = pd.to_datetime(raw_data['date'])
+            return raw_data.sort_values('date')
+        
+        return pd.DataFrame()
+            
     except Exception as e:
-        st.error(f"FinMind 連線異常: {e}")
+        # 這裡會捕捉到 'data' 錯誤，並顯示更詳細的提示
+        st.error(f"📡 FinMind 存取失敗：{e}")
+        st.info("提示：這通常是 Token 流量達上限或權限不足。建議檢查 FinMind 官網個人面板狀態。")
         return pd.DataFrame()
 
 if ticker_input:
