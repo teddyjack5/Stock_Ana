@@ -5,6 +5,7 @@ import pandas as pd
 import json
 import os
 import hashlib
+import requests
 from datetime import datetime, timedelta
 from FinMind.data import DataLoader
 from plotly.subplots import make_subplots
@@ -418,29 +419,31 @@ def get_foreign_holding(stock_id, days=180):
     clean_id = stock_id.split('.')[0]
     start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
     
+    # 這裡我們不使用 dl.get_data，改用直接請求 API 
+    url = "https://api.finmindtrade.com/api/v4/data"
+    parameter = {
+        "dataset": "TaiwanStockHoldingSharesPer",
+        "data_id": clean_id,
+        "start_date": start_date,
+        "token": FINMIND_TOKEN,
+    }
+    
     try:
-        # 直接呼叫 API 獲取原始內容
-        raw_data = dl.taiwan_stock_holding_shares_per(
-            stock_id=clean_id,
-            start_date=start_date
-        )
+        resp = requests.get(url, params=parameter)
+        data_json = resp.json()
         
-        # 檢查回傳是否為 None 或空 DataFrame
-        if raw_data is None or raw_data.empty:
+        # 關鍵檢查：如果回傳裡面沒有 'data'，代表 Token 權限或流量有問題
+        if "data" not in data_json or not data_json["data"]:
             return pd.DataFrame()
             
-        # 確保資料中有我們需要的日期和比例欄位
-        if 'date' in raw_data.columns and 'ForeignInvestmentSharesRatio' in raw_data.columns:
-            raw_data['date'] = pd.to_datetime(raw_data['date'])
-            return raw_data.sort_values('date')
+        df = pd.DataFrame(data_json["data"])
+        if not df.empty:
+            df['date'] = pd.to_datetime(df['date'])
+            return df.sort_values('date')
+    except:
+        return pd.DataFrame()
         
-        return pd.DataFrame()
-            
-    except Exception as e:
-        # 這裡會捕捉到 'data' 錯誤，並顯示更詳細的提示
-        st.error(f"📡 FinMind 存取失敗：{e}")
-        st.info("提示：這通常是 Token 流量達上限或權限不足。建議檢查 FinMind 官網個人面板狀態。")
-        return pd.DataFrame()
+    return pd.DataFrame()
 
 if ticker_input:
     data = yf.download(ticker_input, period=period)
@@ -520,49 +523,36 @@ if ticker_input:
             st.error("籌碼抓取失敗")
 
         # --- 6.5 外資持股變動繪圖 ---
-        st.write("---")
-        st.subheader("🏛️ 外資持股趨勢分析")
-        
         df_holding = get_foreign_holding(ticker_input)
         
-        if not df_holding.empty:
-            # --- 偵測欄位名稱 (除錯用，跑通後可刪除) ---
-            # st.write(df_holding.columns.tolist()) 
+        if not df_holding.empty and 'ForeignInvestmentSharesRatio' in df_holding.columns:
+            st.write("---")
+            st.subheader("🏛️ 外資持股中長期變動")
             
-            # 定義外資持股比率欄位 (FinMind 常見名稱: ForeignInvestmentSharesRatio)
-            target_col = 'ForeignInvestmentSharesRatio'
-            
-            if target_col in df_holding.columns:
-                fig_holding = make_subplots(specs=[[{"secondary_y": True}]])
-                
-                # 股價線
-                fig_holding.add_trace(
-                    go.Scatter(x=data.index, y=data['Close'], name="股價", 
-                               line=dict(color='rgba(200, 200, 200, 0.4)', width=1)),
-                    secondary_y=False
-                )
-                
-                # 外資持股面積圖
-                fig_holding.add_trace(
-                    go.Scatter(
-                        x=df_holding['date'], 
-                        y=df_holding[target_col], 
-                        name="外資持股 %",
-                        fill='tozeroy',
-                        line=dict(color='#00CCFF', width=2),
-                        fillcolor='rgba(0, 204, 255, 0.15)'
-                    ),
-                    secondary_y=True
-                )
-                
-                fig_holding.update_layout(height=400, template="plotly_dark", hovermode="x unified")
-                fig_holding.update_yaxes(title_text="外資持股 %", secondary_y=True, showgrid=True)
-                
-                st.plotly_chart(fig_holding, use_container_width=True)
-            else:
-                st.warning(f"抓到資料但找不到欄位 {target_col}，請檢查 API 回傳結構。")
+            fig_holding = make_subplots(specs=[[{"secondary_y": True}]])
+            # 股價線
+            fig_holding.add_trace(
+                go.Scatter(x=data.index, y=data['Close'], name="股價", 
+                           line=dict(color='rgba(150, 150, 150, 0.5)', width=1)),
+                secondary_y=False
+            )
+            # 外資比例面積圖
+            fig_holding.add_trace(
+                go.Scatter(
+                    x=df_holding['date'], 
+                    y=df_holding['ForeignInvestmentSharesRatio'], 
+                    name="外資持股 %",
+                    fill='tozeroy',
+                    line=dict(color='#00CCFF', width=2),
+                    fillcolor='rgba(0, 204, 255, 0.15)'
+                ),
+                secondary_y=True
+            )
+            fig_holding.update_layout(height=400, template="plotly_dark", margin=dict(t=20, b=20))
+            st.plotly_chart(fig_holding, use_container_width=True)
         else:
-            st.info("無法從 FinMind 取得該股外資持股歷史資料，請確認 API Token 是否有效或該股是否有外資參與。")
+            # 如果真的抓不到，就安靜地顯示一個小提示，或是直接跳過
+            st.caption("ℹ️ 目前無法取得外資詳細持股比例 (可能受限於 API 權限)")
 
         # --- 6. 繪製圖表 ---
         fig = make_subplots(
@@ -809,5 +799,3 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
-
-
