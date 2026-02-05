@@ -583,7 +583,7 @@ if ticker_input:
 
         # --- 6.6 月營收分析 ---
         st.write("---")
-        st.subheader("📈 月營收成長趨勢 (手動計算)")
+        st.subheader("📈 月營收成長趨勢 ")
         
         df_rev = get_monthly_revenue(ticker_input)
         
@@ -881,6 +881,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
