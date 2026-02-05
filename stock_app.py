@@ -286,6 +286,17 @@ if st.sidebar.button("➕ 加入此帳戶"):
         st.success(f"已加入 {current_db_file}")
         st.rerun()
 
+def sync_stock_data():
+    # 這是當下拉選單變動時，強制更新輸入欄位的數值
+    t_key = st.session_state.selected_ticker_key
+    # 從資料庫抓取該股目前的帳務設定
+    acc = st.session_state.db["costs"].get(t_key, {"cost": 0.0, "qty": 0.0})
+    if isinstance(acc, (float, int)): acc = {"cost": acc, "qty": 1.0}
+    
+    # 強制覆蓋 number_input 的 key 值
+    st.session_state.buy_cost = float(acc['cost'])
+    st.session_state.buy_qty = float(acc['qty'])
+
 # C. 股票選取 (核心修改：先選取再搜尋)
 selected_ticker = st.sidebar.selectbox(
     "選取庫存股票", 
@@ -313,17 +324,19 @@ period = st.sidebar.selectbox("分析時間範圍", ["5d", "1mo", "6mo", "1y", "
 
 # D. 帳務管理
 st.sidebar.subheader(f"💰 {ticker_input} 帳務管理")
-stock_acc = active_costs.get(ticker_input, {"cost": 0.0, "qty": 1.0})
 
-# 確保格式正確
-if isinstance(stock_acc, (float, int)): 
-    stock_acc = {"cost": stock_acc, "qty": 1.0}
+# 初始化：如果 session_state 裡沒值（第一次執行），先抓一次
+if "buy_cost" not in st.session_state:
+    acc_init = active_costs.get(ticker_input, {"cost": 0.0, "qty": 0.0})
+    if isinstance(acc_init, (float, int)): acc_init = {"cost": acc_init, "qty": 1.0}
+    st.session_state.buy_cost = float(acc_init['cost'])
+    st.session_state.buy_qty = float(acc_init['qty'])
 
-buy_cost = st.sidebar.number_input("買入單價", value=float(stock_acc['cost']), key="buy_cost")
-buy_qty = st.sidebar.number_input("持有張數", value=float(stock_acc['qty']), step=1.0, key="buy_qty")
+# 使用 key 綁定，不需要再寫 value=...
+buy_cost = st.sidebar.number_input("買入單價", key="buy_cost", step=0.1)
+buy_qty = st.sidebar.number_input("持有張數", key="buy_qty", step=1.0)
 
 if st.sidebar.button("💾 儲存帳務"):
-    # --- 關鍵修正：移除 ["groups"][current_group] ---
     st.session_state.db["costs"][ticker_input] = {"cost": buy_cost, "qty": buy_qty}
     save_db(st.session_state.db, current_db_file)
     st.sidebar.success("✅ 帳務已更新！")
@@ -722,4 +735,3 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
-
