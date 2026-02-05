@@ -588,46 +588,43 @@ if ticker_input:
         df_rev = get_monthly_revenue(ticker_input)
         
         if not df_rev.empty:
+            # 建立圖表... (保持原樣)
             fig_rev = go.Figure()
+            fig_rev.add_trace(go.Bar(x=df_rev['date'], y=df_rev['revenue'], name="月營收", marker_color='rgba(0, 255, 150, 0.6)'))
             
-            # 柱狀圖：月營收金額
-            fig_rev.add_trace(go.Bar(
-                x=df_rev['date'], 
-                y=df_rev['revenue'],
-                name="月營收",
-                marker_color='rgba(0, 255, 150, 0.6)'
-            ))
+            # 安全偵測 YoY 欄位並繪圖
+            yoy_col = 'revenue_year_growth_rate' if 'revenue_year_growth_rate' in df_rev.columns else None
+            if yoy_col:
+                fig_rev.add_trace(go.Scatter(x=df_rev['date'], y=df_rev[yoy_col], name="YoY (%)", line=dict(color='orange', width=2), yaxis="y2"))
             
-            # 折線圖：年增率 (YoY)
-            # FinMind 的月營收表通常已內建 'revenue_year_growth_rate' 欄位
-            if 'revenue_year_growth_rate' in df_rev.columns:
-                fig_rev.add_trace(go.Scatter(
-                    x=df_rev['date'], 
-                    y=df_rev['revenue_year_growth_rate'],
-                    name="YoY (%)",
-                    line=dict(color='orange', width=2),
-                    yaxis="y2"
-                ))
-            
-            fig_rev.update_layout(
-                height=400,
-                template="plotly_dark",
-                yaxis=dict(title="營收金額"),
-                yaxis2=dict(title="YoY (%)", overlaying="y", side="right"),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
-            
+            fig_rev.update_layout(height=400, template="plotly_dark", yaxis=dict(title="營收金額"), yaxis2=dict(title="YoY (%)", overlaying="y", side="right"))
             st.plotly_chart(fig_rev, use_container_width=True)
             
-            # 顯示最近一月的營收簡報
+            # --- 關鍵修正：安全顯示 Metric ---
             latest = df_rev.iloc[-1]
-            col1, col2, col3 = st.columns(3)
-            col1.metric("最新月營收", f"{latest['revenue']/1000000:.1f} M")
-            col2.metric("月增率 (MoM)", f"{latest['revenue_month_growth_rate']:.1f}%")
-            col3.metric("年增率 (YoY)", f"{latest['revenue_year_growth_rate']:.1f}%")
+            
+            # 定義想要抓取的欄位與其對應的顯示名稱
+            metrics_to_show = [
+                {"label": "最新月營收", "key": "revenue", "suffix": " M", "div": 1000000},
+                {"label": "月增率 (MoM)", "key": "revenue_month_growth_rate", "suffix": "%", "div": 1},
+                {"label": "年增率 (YoY)", "key": "revenue_year_growth_rate", "suffix": "%", "div": 1}
+            ]
+            
+            cols = st.columns(len(metrics_to_show))
+            for i, m in enumerate(metrics_to_show):
+                # 檢查欄位是否存在，不存在則顯示 "N/A"
+                if m['key'] in latest and pd.notnull(latest[m['key']]):
+                    val = float(latest[m['key']]) / m['div']
+                    cols[i].metric(m['label'], f"{val:.1f}{m['suffix']}")
+                else:
+                    cols[i].metric(m['label'], "N/A")
+                    
+            # 💡 小偵探：如果出錯，讓開發者在畫面上看到到底有哪些欄位
+            with st.expander("🔍 營收資料欄位診斷"):
+                st.write("目前抓到的欄位有：", df_rev.columns.tolist())
+                st.dataframe(df_rev.tail(3))
         else:
-            st.info("無法取得月營收資料，請檢查 API 額度或股票代號。")
-
+            st.info("無法取得月營收資料。")
         # --- 6. 繪製圖表 ---
         fig = make_subplots(
             rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.05,
@@ -873,3 +870,4 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
