@@ -276,10 +276,6 @@ if st.sidebar.button("🔍 查看所有個股損益", use_container_width=True):
 
 # --- 5. 庫存管理 ---
 st.sidebar.subheader("📍 管理庫存股票")
-col_id, col_name = st.sidebar.columns(2)
-m_id = col_id.text_input("代號", placeholder="2330.TW").upper()
-m_name = col_name.text_input("名稱", placeholder="台積電")
-
 @st.dialog("➕ 新增股票至清單")
 def add_stock_dialog(db_file):
     col1, col2 = st.columns(2)
@@ -919,6 +915,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
