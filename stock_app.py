@@ -280,22 +280,31 @@ col_id, col_name = st.sidebar.columns(2)
 m_id = col_id.text_input("代號", placeholder="2330.TW").upper()
 m_name = col_name.text_input("名稱", placeholder="台積電")
 
-if st.sidebar.button("➕ 加入此帳戶"):
-    if m_id and m_name:
-        # 1. 更新 Session State 與資料庫
-        st.session_state.db["list"][m_id] = m_name
-        save_db(st.session_state.db, current_db_file)
-        
-        # 2. 噴發慶祝氣球 (非常有儀式感！)
-        st.balloons()
-        
-        # 3. 彈出右下角通知
-        st.toast(f"✅ {m_name} ({m_id}) 已成功存入 {current_db_file}！", icon="💰")
-        
-        # 4. 重新整理頁面以更新列表
+@st.dialog("➕ 新增股票至清單")
+def add_stock_dialog(db_file):
+    col1, col2 = st.columns(2)
+    new_id = col1.text_input("股票代號", placeholder="2330.TW").upper()
+    new_name = col2.text_input("股票名稱", placeholder="台積電")
+    
+    st.write("---")
+    c1, c2 = st.columns(2)
+    if c1.button("取消", use_container_width=True):
         st.rerun()
-    else:
-        st.sidebar.error("⚠️ 記得填寫代號與名稱喔！")
+        
+    if c2.button("確認加入", type="primary", use_container_width=True):
+        if new_id and new_name:
+            # 執行新增邏輯
+            st.session_state.db["list"][new_id] = new_name
+            save_db(st.session_state.db, db_file)
+            
+            # 通知與刷新
+            st.balloons() # 加入成功的儀式感
+            st.toast(f"✅ 已成功加入 {new_name} ({new_id})", icon="💰")
+            st.rerun()
+        else:
+            st.error("代號與名稱都要填寫喔！")
+if st.sidebar.button("➕ 新增股票項目", use_container_width=True):
+    add_stock_dialog(current_db_file)
 
 def sync_stock_data():
     # 這是當下拉選單變動時，強制更新輸入欄位的數值
@@ -910,6 +919,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
