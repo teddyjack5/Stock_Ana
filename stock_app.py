@@ -423,14 +423,62 @@ if ticker_input:
 
         # 核心 K 線圖
         st.write("---")
-        fig_main = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_width=[0.2, 0.2, 0.2, 0.4])
-        fig_main.add_trace(go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name="K線"), row=1, col=1)
-        fig_main.add_trace(go.Scatter(x=data.index, y=data['MA20'], name="20MA", line=dict(color='orange')), row=1, col=1)
-        fig_main.add_trace(go.Scatter(x=data.index, y=data['ATR_Trailing'], name="ATR止損", line=dict(dash='dot', color='rgba(255,165,0,0.5)')), row=1, col=1)
-        fig_main.add_trace(go.Bar(x=data.index, y=data['Volume'], name="量"), row=2, col=1)
+        st.subheader(f"📊 {ticker_input} 技術指標全覽")
+
+        # 建立多子圖
+        fig_main = make_subplots(
+            rows=4, cols=1, 
+            shared_xaxes=True, 
+            vertical_spacing=0.06, 
+            row_width=[0.2, 0.2, 0.2, 0.4]
+        )
+
+        # --- 第 1 欄：K線與多條均線 ---
+        # 1. K線圖
+        fig_main.add_trace(go.Candlestick(
+            x=data.index, open=data['Open'], high=data['High'], 
+            low=data['Low'], close=data['Close'], name="K線"
+        ), row=1, col=1)
+
+        # 2. 5日均線 (週線) - 使用白色或淺粉色
+        fig_main.add_trace(go.Scatter(x=data.index, y=data['MA5'], name="5MA", line=dict(color='#FFFFFF', width=1.5)), row=1, col=1)
+        
+        # 3. 20日均線 (月線) - 維持橘色
+        fig_main.add_trace(go.Scatter(x=data.index, y=data['MA20'], name="20MA", line=dict(color='orange', width=1.5)), row=1, col=1)
+        
+        # 4. 60日均線 (季線) - 使用亮綠色
+        fig_main.add_trace(go.Scatter(x=data.index, y=data['MA60'], name="60MA", line=dict(color='#00FF00', width=1.5)), row=1, col=1)
+
+        # 5. ATR 止損線 - 改為【亮紫色】且【加粗實線】或【明顯虛線】
+        fig_main.add_trace(go.Scatter(
+            x=data.index, y=data['ATR_Trailing'], 
+            name="ATR止損線", 
+            line=dict(color='#FF00FF', width=2, dash='longdash') # 👈 亮紫色，長虛線
+        ), row=1, col=1)
+
+        # --- 第 2 欄：成交量 ---
+        fig_main.add_trace(go.Bar(x=data.index, y=data['Volume'], name="成交量", marker_color='rgba(128,128,128,0.5)'), row=2, col=1)
+
+        # --- 第 3 欄：RSI ---
         fig_main.add_trace(go.Scatter(x=data.index, y=data['RSI'], name="RSI", line=dict(color='yellow')), row=3, col=1)
-        fig_main.add_trace(go.Scatter(x=data.index, y=data['MACD'], name="MACD"), row=4, col=1)
-        fig_main.update_layout(height=900, template="plotly_dark", xaxis_rangeslider_visible=False)
+
+        # --- 第 4 欄：MACD ---
+        fig_main.add_trace(go.Scatter(x=data.index, y=data['MACD'], name="MACD", line=dict(color='#00CCFF')), row=4, col=1)
+
+        # --- 佈局優化 ---
+        fig_main.update_layout(
+            height=900, 
+            template="plotly_dark", 
+            xaxis_rangeslider_visible=False,
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin=dict(l=10, r=10, t=60, b=10),
+            yaxis1=dict(title="股價"),
+            yaxis2=dict(title="成交量"),
+            yaxis3=dict(title="RSI"),
+            yaxis4=dict(title="MACD")
+        )
+
         st.plotly_chart(fig_main, use_container_width=True)
 
         # --- AI 診斷 ---
@@ -643,6 +691,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
