@@ -417,7 +417,8 @@ if ticker_input:
             fig_r.add_trace(go.Scatter(x=df_rev['date'], y=df_rev['yoy'], name="YoY%", line=dict(color='red'), yaxis="y2"))
             fig_r.update_layout(height=400, template="plotly_dark", yaxis2=dict(overlaying="y", side="right"))
             st.plotly_chart(fig_r, use_container_width=True)
-            st.caption(f"註：最新月營收為 {df_rev['revenue'].iloc[-1]/100000000:.2f} 億元，年增率為 {df_rev['yoy'].iloc[-1]:.2f}%。")latest_rev = df_rev['revenue'].iloc[-1] / 100000000
+            st.caption(f"註：最新月營收為 {df_rev['revenue'].iloc[-1]/100000000:.2f} 億元，年增率為 {df_rev['yoy'].iloc[-1]:.2f}%。")
+            latest_rev = df_rev['revenue'].iloc[-1] / 100000000
             latest_yoy = df_rev['yoy'].iloc[-1]
             st.info(f"📊 **營收速報**：本月營收為 **{latest_rev:.2f} 億**，較去年同期{'成長' if latest_yoy > 0 else '衰退'} **{abs(latest_yoy):.2f}%**。")
 
@@ -643,6 +644,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
