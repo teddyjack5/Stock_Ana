@@ -282,10 +282,20 @@ m_name = col_name.text_input("名稱", placeholder="台積電")
 
 if st.sidebar.button("➕ 加入此帳戶"):
     if m_id and m_name:
-        st.session_state.db["list"][m_id] = m_namermp
+        # 1. 更新 Session State 與資料庫
+        st.session_state.db["list"][m_id] = m_name
         save_db(st.session_state.db, current_db_file)
-        st.success(f"已加入 {current_db_file}")
+        
+        # 2. 噴發慶祝氣球 (非常有儀式感！)
+        st.balloons()
+        
+        # 3. 彈出右下角通知
+        st.toast(f"✅ {m_name} ({m_id}) 已成功存入 {current_db_file}！", icon="💰")
+        
+        # 4. 重新整理頁面以更新列表
         st.rerun()
+    else:
+        st.sidebar.error("⚠️ 記得填寫代號與名稱喔！")
 
 def sync_stock_data():
     # 這是當下拉選單變動時，強制更新輸入欄位的數值
@@ -881,6 +891,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
