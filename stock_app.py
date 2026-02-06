@@ -497,7 +497,7 @@ if ticker_input:
             * **柱狀圖由負轉正**：代表動能轉強，漲勢開啟。
             * **柱狀圖由正轉負**：代表動能減弱，需防範回檔。
             * **快慢線金叉**：短線偏多訊號。
-            """
+            """)
 
         # --- AI 診斷 ---
         st.write("---")
@@ -709,6 +709,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
