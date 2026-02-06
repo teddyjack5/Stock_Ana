@@ -10,12 +10,15 @@ from datetime import datetime, timedelta
 from FinMind.data import DataLoader
 from plotly.subplots import make_subplots
 
-# --- 0. 資料庫功能設定 ---
+# ==========================================
+# 0. 核心配置與資料庫工具函數
+# ==========================================
 def hash_password(password):
     if not password: return None
     return hashlib.sha256(password.encode()).hexdigest()
+
 def load_db(filename):
-    # 這是我們新版的標準結構
+    """載入庫存 JSON 檔案並處理舊版相容性"""
     default_data = {
         "password_hash" : None,
         "list": {"2356.TW": "英業達", "0050.TW": "元大台灣50"},
@@ -24,26 +27,21 @@ def load_db(filename):
             "0050.TW": {"cost": 70.0, "qty": 1.0}
         }
     }
-    
     if os.path.exists(filename):
         try:
             with open(filename, "r", encoding="utf-8") as f:
                 content = json.load(f)
-                
-                # --- 關鍵修正：自動轉換舊格式 ---
+                # 自動轉換舊格式
                 if "groups" in content:
-                    # 如果是舊格式，抓取「我的最愛」裡面的內容來救資料
                     first_group_name = list(content["groups"].keys())[0]
-                    st.toast(f"偵測到舊版格式，已自動轉換帳戶：{first_group_name}")
+                    st.toast(f"🔄 偵測到舊版格式，已自動轉換帳戶")
                     return {
                         "list": content["groups"][first_group_name].get("list", {}),
-                        "costs": content["groups"][first_group_name].get("costs", {})
+                        "costs": content["groups"][first_group_name].get("costs", {}),
+                        "password_hash": None
                     }
-                
-                # 如果新格式缺少 list 或 costs，補上空的以免噴錯
-                if "list" not in content: content["list"] = {}
-                if "costs" not in content: content["costs"] = {}
-                
+                content.setdefault("list", {})
+                content.setdefault("costs", {})
                 return content
         except Exception as e:
             st.error(f"讀取 JSON 出錯: {e}")
@@ -51,11 +49,16 @@ def load_db(filename):
     return default_data
 
 def save_db(data, filename):
+    """儲存資料至 JSON 檔案"""
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
+# ==========================================
+# 1. 互動式對話框 (Dialogs)
+# ==========================================
 @st.dialog("📋 全帳戶個股損益明細", width="large")
 def show_full_portfolio_report(active_costs, active_list):
+    """顯示完整的投資組合損益清單"""
     if not active_costs:
         st.warning("目前庫存中沒有帳務資料。")
         return
@@ -64,9 +67,7 @@ def show_full_portfolio_report(active_costs, active_list):
     with st.spinner("正在獲取最新報價..."):
         for t_code, info in active_costs.items():
             try:
-                # 抓取即時價格
                 tick = yf.Ticker(t_code)
-                # 為了速度，抓取最近一筆即可
                 df_recent = tick.history(period="1d")
                 if df_recent.empty: continue
                 
@@ -81,630 +82,354 @@ def show_full_portfolio_report(active_costs, active_list):
                 roi = (diff / total_cost * 100) if total_cost > 0 else 0
                 
                 report_data.append({
-                    "代號": t_code,
-                    "名稱": name,
-                    "成本價": f"{cost:.2f}",
-                    "現價": f"{c_price:.2f}",
-                    "張數": qty,
-                    "投入本金": int(total_cost),
-                    "目前市值": int(market_value),
-                    "損益": int(diff),
-                    "報酬率": f"{roi:.2f}%"
+                    "代號": t_code, "名稱": name, "成本價": f"{cost:.2f}",
+                    "現價": f"{c_price:.2f}", "張數": qty,
+                    "投入本金": int(total_cost), "目前市值": int(market_value),
+                    "損益": int(diff), "報酬率": f"{roi:.2f}%"
                 })
-            except:
-                continue
+            except: continue
 
     if report_data:
         df_report = pd.DataFrame(report_data)
-        
-        # 建立美化表格
-        def color_profit(val):
-            if isinstance(val, int):
-                color = 'red' if val > 0 else 'green' if val < 0 else 'white'
-                return f'color: {color}'
-            return ''
-
-        # 顯示總覽表格
         st.dataframe(
-            df_report.style.applymap(color_profit, subset=['損益']),
-            use_container_width=True,
-            hide_index=True
+            df_report.style.applymap(lambda v: f'color: {"red" if v > 0 else "green" if v < 0 else "white"}', subset=['損益']),
+            use_container_width=True, hide_index=True
         )
-        
-        # 額外小統計
         total_p = sum(d['損益'] for d in report_data)
         st.divider()
         st.metric("合計預估總損益", f"NT$ {total_p:,}", delta=f"{total_p:,}")
-    else:
-        st.error("無法取得即時資料，請檢查網路連線。")
 
-# --- 1. 配置 FinMind ---
-FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMS0yOCAwODoyNToyNyIsInVzZXJfaWQiOiJ0ZWRkeWphY2siLCJlbWFpbCI6InRlZGR5amFjazVAeWFob28uY29tLnR3IiwiaXAiOiI0Mi43Mi4yMTEuMTUzIn0.Su4W8X5E9XPN9PZdA03Z6XO6i630kOSvOjcrLowcO-I"
-dl = DataLoader()
-try:
-    dl.set_token(token=FINMIND_TOKEN)
-except:
-    pass
-
-st.set_page_config(page_title="小鐵的股票分析報告", layout="wide")
-st.title("📈 小鐵的股票分析報告") 
-
-if 'init_run' not in st.session_state:
-    # 第一次執行時，強制給予一個空的資料結構
-    st.session_state.db = {"password_hash": None, "list": {}, "costs": {}}
-    st.session_state.current_file = "未選取檔案"
-    st.session_state.init_run = True # 標記已啟動過
-
-# --- 2. 側邊欄：資料庫檔案切換 ---
-st.sidebar.title("📁 庫存管理")
-
-# 獲取目前資料夾所有 .json 檔案
-db_files = [f for f in os.listdir('.') if f.endswith('.json') and f != "package.json"]
-if not db_files:
-    db_files = ["my_stock_db.json"]
-
-current_db_file = st.sidebar.selectbox("📂 切換帳戶庫存", db_files)
-
-# 當使用者「手動」切換檔案時，才去讀取 JSON
-if st.session_state.get('current_file') != current_db_file:
-    st.session_state.db = load_db(current_db_file)
-    st.session_state.current_file = current_db_file
-
-# 新增帳戶檔案
-new_db_name = st.sidebar.text_input("➕ 建立新帳戶名稱", placeholder="例如: 退休基金")
-if st.sidebar.button("建立新帳戶"):
-    if new_db_name:
-        full_name = new_db_name if new_db_name.endswith('.json') else f"{new_db_name}.json"
-        empty_data = {"list": {}, "costs": {}}
-        save_db(empty_data, full_name)
-        st.rerun()
-
-# --- 💣 刪除檔案功能 ---
-st.sidebar.markdown("---")
-with st.sidebar.expander("🗑️ 危險區域 (刪除帳戶)"):
-    st.warning(f"確定要刪除【{current_db_file}】嗎？此動作無法復原！")
-    confirm_delete = st.checkbox("我確定要永久刪除此檔案")
-    if st.sidebar.button("💥 執行刪除", type="primary", disabled=not confirm_delete):
-        try:
-            # 至少保留一個檔案，不要全部刪光
-            if len(db_files) > 1:
-                os.remove(current_db_file)
-                st.success(f"已成功刪除 {current_db_file}")
-                # 清除 session_state 並重新整理
-                if 'db' in st.session_state: del st.session_state.db
-                st.rerun()
-            else:
-                st.error("這是最後一個檔案了，不能刪除喔！")
-        except Exception as e:
-            st.error(f"刪除失敗: {e}")
-
-st.sidebar.divider()
-
-# 載入當前選擇的檔案到 session_state
-if 'db' not in st.session_state or st.session_state.get('current_file') != current_db_file:
-    st.session_state.db = load_db(current_db_file)
-    st.session_state.current_file = current_db_file
-
-# --- 🔐 密碼驗證邏輯 ---
-is_authenticated = False
-db_data = st.session_state.db
-
-if db_data.get("password_hash") is None:
-    st.sidebar.info("🔓 此檔案尚未設置密碼")
-    if st.sidebar.checkbox("🔒 想要設置 4 位數密碼?"):
-        new_pwd = st.sidebar.text_input("輸入新密碼", type="password", max_chars=4)
-        if st.sidebar.button("確認設置密碼"):
-            st.session_state.db["password_hash"] = hash_password(new_pwd)
-            save_db(st.session_state.db, current_db_file)
-            st.success("密碼設置成功！")
-            st.rerun()
-    is_authenticated = True # 沒設密碼直接放行
-else:
-    input_pwd = st.sidebar.text_input("🔑 輸入 4 位數密碼解鎖", type="password", max_chars=4)
-    if input_pwd:
-        if hash_password(input_pwd) == db_data["password_hash"]:
-            st.sidebar.success("✅ 驗證通過")
-            is_authenticated = True
-        else:
-            st.sidebar.error("❌ 密碼錯誤")
-            is_authenticated = False
-
-# 攔截點：如果沒通過驗證，停止後續所有程式碼執行
-if not is_authenticated:
-    st.warning("🔒 請在左側輸入正確密碼以開啟【小鐵的股票分析報告】")
-    st.stop()
-
-# 簡化變數名稱，讓後面的程式碼不用改
-active_list = st.session_state.db["list"]
-active_costs = st.session_state.db["costs"]
-
-# --- 3. 庫存總體檢計算 ---
-total_portfolio_cost = 0.0
-total_portfolio_market_value = 0.0
-
-# 遍歷庫存進行加總 (這裡會針對當前選取的 JSON 檔計算)
-if active_costs:
-    with st.spinner(f"正在計算 {current_db_file} 的總損益..."):
-        for t_code, info in active_costs.items():
-            try:
-                temp_df = yf.download(t_code, period="1d", progress=False)
-                if not temp_df.empty:
-                    c_price = temp_df['Close'].iloc[-1]
-                    if isinstance(c_price, pd.Series): c_price = c_price.iloc[0]
-                    
-                    cost = info['cost'] if isinstance(info, dict) else info
-                    qty = info['qty'] if isinstance(info, dict) else 1.0
-                    
-                    total_portfolio_cost += cost * qty * 1000
-                    total_portfolio_market_value += c_price * qty * 1000
-            except:
-                continue
-
-# 計算總損益
-total_profit = total_portfolio_market_value - total_portfolio_cost
-total_profit_rate = (total_profit / total_portfolio_cost * 100) if total_portfolio_cost > 0 else 0
-
-# --- 4. 渲染總損益大卡片 ---
-st.write(f"### 🏢 帳戶總覽：{current_db_file.replace('.json', '')}")
-p_color = "#FF4B4B" if total_profit > 0 else ("#00B050" if total_profit < 0 else "#FFFFFF")
-
-st.markdown(f"""
-    <div style="background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%); 
-                padding: 25px; border-radius: 20px; border-left: 10px solid {p_color}; margin-bottom: 20px;">
-        <div style="display: flex; justify-content: space-around; align-items: center;">
-            <div style="text-align: left;">
-                <p style="color: #AAAAAA; font-size: 14px; margin: 0;">資產總市值</p>
-                <h2 style="color: white; margin: 0;">NT$ {int(total_portfolio_market_value):,}</h2>
-            </div>
-            <div style="text-align: center; border-left: 1px solid #444; border-right: 1px solid #444; padding: 0 30px;">
-                <p style="color: #AAAAAA; font-size: 14px; margin: 0;">預估總損益</p>
-                <h1 style="color: {p_color}; margin: 0; font-size: 36px;">
-                    {"+" if total_profit > 0 else ""}{int(total_profit):,}
-                </h1>
-            </div>
-            <div style="text-align: right;">
-                <p style="color: #AAAAAA; font-size: 14px; margin: 0;">總報酬率</p>
-                <h2 style="color: {p_color}; margin: 0;">{total_profit_rate:.2f}%</h2>
-            </div>
-        </div>
-    </div>
-""", unsafe_allow_html=True)
-
-st.sidebar.subheader("📊 帳戶報表")
-if st.sidebar.button("🔍 查看所有個股損益", use_container_width=True):
-    show_full_portfolio_report(active_costs, active_list)
-
-# --- 5. 庫存管理 ---
-st.sidebar.subheader("📍 管理庫存股票")
 @st.dialog("➕ 新增股票至清單")
 def add_stock_dialog(db_file):
+    """新增股票代號與名稱"""
     col1, col2 = st.columns(2)
     new_id = col1.text_input("股票代號", placeholder="2330.TW").upper()
     new_name = col2.text_input("股票名稱", placeholder="台積電")
     
     st.write("---")
     c1, c2 = st.columns(2)
-    if c1.button("取消", use_container_width=True):
-        st.rerun()
-        
+    if c1.button("取消", use_container_width=True): st.rerun()
     if c2.button("確認加入", type="primary", use_container_width=True):
         if new_id and new_name:
-            # 執行新增邏輯
             st.session_state.db["list"][new_id] = new_name
             save_db(st.session_state.db, db_file)
-            
-            # 通知與刷新
-            st.balloons() # 加入成功的儀式感
-            st.toast(f"✅ 已成功加入 {new_name} ({new_id})", icon="💰")
+            st.balloons()
+            st.toast(f"✅ 已成功加入 {new_name}", icon="💰")
             st.rerun()
         else:
-            st.error("代號與名稱都要填寫喔！")
-if st.sidebar.button("➕ 新增股票項目", use_container_width=True):
-    add_stock_dialog(current_db_file)
-
-def sync_stock_data():
-    # 這是當下拉選單變動時，強制更新輸入欄位的數值
-    t_key = st.session_state.selected_ticker_key
-    # 從資料庫抓取該股目前的帳務設定
-    acc = st.session_state.db["costs"].get(t_key, {"cost": 0.0, "qty": 0.0})
-    if isinstance(acc, (float, int)): acc = {"cost": acc, "qty": 1.0}
-    
-    # 強制覆蓋 number_input 的 key 值
-    st.session_state.buy_cost = float(acc['cost'])
-    st.session_state.buy_qty = float(acc['qty'])
-
-# C. 股票選取 (核心修改：先選取再搜尋)
-selected_ticker = st.sidebar.selectbox(
-    "選取庫存股票", 
-    list(active_list.keys()), 
-    format_func=lambda x: f"{x} {active_list[x]}" if x in active_list else x,
-    key="selected_ticker_key",    # 必須對應 sync_stock_data 裡的 t_key = st.session_state.selected_ticker_key
-    on_change=sync_stock_data     # 這是啟動自動更新的開關
-)
+            st.error("請完整填寫代號與名稱")
 
 @st.dialog("⚠️ 刪除確認")
 def delete_confirm_dialog(ticker, name, db_file):
-    st.write(f"你確定要從庫存中刪除 **{name} ({ticker})** 嗎？")
-    st.write("此動作無法復原。")
-    
-    # 這裡的 cols 讓按鈕並排
+    """二次確認刪除動作"""
+    st.warning(f"確定要從庫存中刪除 **{name} ({ticker})** 嗎？此動作無法復原。")
     c1, c2 = st.columns(2)
-    if c1.button("取消", use_container_width=True):
-        st.rerun() # 直接關閉
-        
+    if c1.button("取消", use_container_width=True): st.rerun()
     if c2.button("確認刪除", type="primary", use_container_width=True):
-        # 執行刪除邏輯
         st.session_state.db["list"].pop(ticker, None)
         st.session_state.db["costs"].pop(ticker, None)
         save_db(st.session_state.db, db_file)
-        
-        # 發送通知
         st.toast(f"🗑️ 已成功刪除 {name}", icon="🔥")
-        # 執行完全重整，確保對話框消失且列表更新
         st.rerun()
 
-# 2. 在側邊欄的刪除按鈕位置調用它
+# ==========================================
+# 2. 系統初始化與 API 設定
+# ==========================================
+st.set_page_config(page_title="小鐵的股票分析報告", layout="wide")
+st.title("📈 小鐵的股票分析報告")
+
+FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMS0yOCAwODoyNToyNyIsInVzZXJfaWQiOiJ0ZWRkeWphY2siLCJlbWFpbCI6InRlZGR5amFjazVAeWFob28uY29tLnR3IiwiaXAiOiI0Mi43Mi4yMTEuMTUzIn0.Su4W8X5E9XPN9PZdA03Z6XO6i630kOSvOjcrLowcO-I"
+dl = DataLoader()
+try: dl.set_token(token=FINMIND_TOKEN)
+except: pass
+
+if 'db' not in st.session_state:
+    st.session_state.db = {"password_hash": None, "list": {}, "costs": {}}
+    st.session_state.current_file = None
+
+# ==========================================
+# 3. 側邊欄：帳戶管理與安全性
+# ==========================================
+st.sidebar.title("📁 帳戶與庫存")
+
+# 帳戶檔案切換
+db_files = [f for f in os.listdir('.') if f.endswith('.json') and f != "package.json"]
+if not db_files: db_files = ["my_stock_db.json"]
+current_db_file = st.sidebar.selectbox("📂 切換帳戶庫存", db_files)
+
+# 檔案切換偵測
+if st.session_state.current_file != current_db_file:
+    st.session_state.db = load_db(current_db_file)
+    st.session_state.current_file = current_db_file
+
+# 新增帳戶
+new_db_name = st.sidebar.text_input("➕ 建立新帳戶名稱", placeholder="例如: 退休基金")
+if st.sidebar.button("建立新帳戶"):
+    if new_db_name:
+        full_name = f"{new_db_name}.json" if not new_db_name.endswith('.json') else new_db_name
+        save_db({"list": {}, "costs": {}}, full_name)
+        st.rerun()
+
+# 刪除帳戶 (危險區域)
+with st.sidebar.expander("🗑️ 危險區域 (刪除帳戶)"):
+    st.warning(f"確定要刪除【{current_db_file}】？")
+    if st.checkbox("我確定要永久刪除", key="confirm_del_db"):
+        if st.button("💥 執行刪除", type="primary"):
+            if len(db_files) > 1:
+                os.remove(current_db_file)
+                st.session_state.current_file = None
+                st.rerun()
+            else: st.error("至少需保留一個帳戶")
+
+st.sidebar.divider()
+
+# 密碼驗證邏輯
+is_authenticated = False
+if st.session_state.db.get("password_hash") is None:
+    st.sidebar.info("🔓 此帳戶尚未設置密碼")
+    if st.sidebar.checkbox("🔒 設置 4 位數密碼"):
+        new_pwd = st.sidebar.text_input("輸入新密碼", type="password", max_chars=4)
+        if st.sidebar.button("確認設置"):
+            st.session_state.db["password_hash"] = hash_password(new_pwd)
+            save_db(st.session_state.db, current_db_file)
+            st.rerun()
+    is_authenticated = True
+else:
+    input_pwd = st.sidebar.text_input("🔑 輸入 4 位數密碼", type="password", max_chars=4)
+    if input_pwd and hash_password(input_pwd) == st.session_state.db["password_hash"]:
+        is_authenticated = True
+    elif input_pwd: st.sidebar.error("❌ 密碼錯誤")
+
+if not is_authenticated:
+    st.warning("🔒 請輸入密碼以開啟報告")
+    st.stop()
+
+# ==========================================
+# 4. 主介面：資產總覽卡片
+# ==========================================
+active_list = st.session_state.db["list"]
+active_costs = st.session_state.db["costs"]
+
+total_cost, total_value = 0.0, 0.0
+if active_costs:
+    with st.spinner("計算總資產中..."):
+        for t_code, info in active_costs.items():
+            try:
+                temp_df = yf.download(t_code, period="1d", progress=False)
+                if not temp_df.empty:
+                    c_price = temp_df['Close'].iloc[-1]
+                    c = info['cost'] if isinstance(info, dict) else info
+                    q = info['qty'] if isinstance(info, dict) else 1.0
+                    total_cost += c * q * 1000
+                    total_value += float(c_price) * q * 1000
+            except: continue
+
+profit = total_value - total_cost
+roi = (profit / total_cost * 100) if total_cost > 0 else 0
+p_color = "#FF4B4B" if profit > 0 else ("#00B050" if profit < 0 else "#FFFFFF")
+
+st.write(f"### 🏢 帳戶總覽：{current_db_file.replace('.json', '')}")
+st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%); padding: 25px; border-radius: 20px; border-left: 10px solid {p_color};">
+        <div style="display: flex; justify-content: space-around; align-items: center;">
+            <div><p style="color: gray; margin: 0;">資產總市值</p><h2 style="color: white; margin: 0;">NT$ {int(total_value):,}</h2></div>
+            <div style="border-left: 1px solid #444; border-right: 1px solid #444; padding: 0 30px;">
+                <p style="color: gray; margin: 0;">預估總損益</p>
+                <h1 style="color: {p_color}; margin: 0; font-size: 36px;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
+            </div>
+            <div><p style="color: gray; margin: 0;">總報酬率</p><h2 style="color: {p_color}; margin: 0;">{roi:.2f}%</h2></div>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 5. 側邊欄：庫存管理與選取
+# ==========================================
+st.sidebar.subheader("⚙️ 庫存管理")
+if st.sidebar.button("➕ 新增股票項目", use_container_width=True):
+    add_stock_dialog(current_db_file)
+
+if st.sidebar.button("🔍 查看全帳戶明細", use_container_width=True):
+    show_full_portfolio_report(active_costs, active_list)
+
+st.sidebar.write("---")
+
+# 股票選取與同步
+def sync_stock_data():
+    t_key = st.session_state.get('selected_ticker_key')
+    acc = st.session_state.db["costs"].get(t_key, {"cost": 0.0, "qty": 0.0})
+    st.session_state.buy_cost = float(acc['cost'])
+    st.session_state.buy_qty = float(acc['qty'])
+
+selected_ticker = st.sidebar.selectbox(
+    "選取庫存個股", list(active_list.keys()), 
+    format_func=lambda x: f"{x} {active_list[x]}",
+    key="selected_ticker_key", on_change=sync_stock_data
+)
+
 if selected_ticker:
-    # 取得名稱用於顯示
-    current_name = st.session_state.db["list"].get(selected_ticker, selected_ticker)
-    
-    # 點擊此按鈕只會觸發「彈窗」，不會執行刪除
     if st.sidebar.button(f"🗑️ 刪除 {selected_ticker}", use_container_width=True):
-        delete_confirm_dialog(selected_ticker, current_name, current_db_file)
+        delete_confirm_dialog(selected_ticker, active_list.get(selected_ticker), current_db_file)
 
-st.sidebar.markdown("---")
-custom_ticker = st.sidebar.text_input("🔍 全域搜尋 (不加入庫存)", "")
-ticker_input = custom_ticker if custom_ticker else selected_ticker
-
+st.sidebar.write("---")
+custom_search = st.sidebar.text_input("🔍 全域搜尋 (不加入庫存)", "")
+ticker_input = custom_search if custom_search else selected_ticker
 period = st.sidebar.selectbox("分析時間範圍", ["5d", "1mo", "6mo", "1y", "2y"], index=2)
 
-# D. 帳務管理
+# 帳務設定
 st.sidebar.subheader(f"💰 {ticker_input} 帳務管理")
+if "buy_cost" not in st.session_state: sync_stock_data()
+u_cost = st.sidebar.number_input("買入單價", key="buy_cost", step=0.1)
+u_qty = st.sidebar.number_input("持有張數", key="buy_qty", step=1.0)
 
-# 初始化：如果 session_state 裡沒值（第一次執行），先抓一次
-if "buy_cost" not in st.session_state:
-    acc_init = active_costs.get(ticker_input, {"cost": 0.0, "qty": 0.0})
-    if isinstance(acc_init, (float, int)): acc_init = {"cost": acc_init, "qty": 1.0}
-    st.session_state.buy_cost = float(acc_init['cost'])
-    st.session_state.buy_qty = float(acc_init['qty'])
-
-# 使用 key 綁定，不需要再寫 value=...
-buy_cost = st.sidebar.number_input("買入單價", key="buy_cost", step=0.1)
-buy_qty = st.sidebar.number_input("持有張數", key="buy_qty", step=1.0)
-
-if st.sidebar.button("💾 儲存帳務"):
-    st.session_state.db["costs"][ticker_input] = {"cost": buy_cost, "qty": buy_qty}
+if st.sidebar.button("💾 儲存帳務修改"):
+    st.session_state.db["costs"][ticker_input] = {"cost": u_cost, "qty": u_qty}
     save_db(st.session_state.db, current_db_file)
-    st.sidebar.success("✅ 帳務已更新！")
+    st.sidebar.success("帳務已更新")
     st.rerun()
 
 show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
 
-# --- 5. 獲利試算區 ---
-if ticker_input:
-    # 先下載數據，確保 price 變數在損益計算前已存在
-    data = yf.download(ticker_input, period=period)
-    
-    if not data.empty:
-        # --- 核心修正：定義當前價格 ---
-        curr = data.iloc[-1]
-        prev = data.iloc[-2]
-        price = float(curr['Close']) # 確保這裡先取得價格
-        
-        # 進行個股損益計算
-        if ticker_input in active_costs:
-            st.write("---")
-            stock_info = active_costs[ticker_input]
-            
-            # 確保取得正確的成本與張數
-            c = stock_info['cost'] if isinstance(stock_info, dict) else stock_info
-            q = stock_info['qty'] if isinstance(stock_info, dict) else 1.0
-            
-            if c > 0:
-                total_cost = c * q * 1000
-                current_val = price * q * 1000
-                profit = current_val - total_cost
-                profit_rate = (profit / total_cost) * 100 if total_cost > 0 else 0
-                
-                display_filename = current_db_file.replace('.json', '')
-                st.subheader(f"💰 個股損益試算 (帳戶: {display_filename})")
-                
-                p_color = "#FF4B4B" if profit > 0 else ("#00B050" if profit < 0 else "#FFFFFF")
-                
-                i1, i2, i3 = st.columns(3)
-                with i1:
-                    st.markdown(f"""
-                        <div style="text-align: left;">
-                        <p style="color: gray; font-size: 16px; margin-bottom: 0px;">預估損益 (報酬率)</p>
-                        <p style="color: {p_color}; font-size: 30px; font-weight: bold; margin-top: -5px;">
-                                {"+" if profit > 0 else ""}{int(profit):,} 
-                                <span style="font-size: 18px;">({profit_rate:.2f}%)</span>
-                            </p>
-                        </div>
-                    """, unsafe_allow_html=True)
-                
-                i2.metric("投入本金", f"NT$ {int(total_cost):,}")
-                i3.metric("目前市值", f"NT$ {int(current_val):,}")
-
-# --- 3. 計算函數 ---
+# ==========================================
+# 6. 技術指標計算函數集
+# ==========================================
 def calculate_rsi(df, periods=14):
-    if len(df) < periods: return pd.Series([50] * len(df))
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=periods).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=periods).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-def calculate_macd(df, fast=12, slow=26, signal=9):
-    ema12 = df['Close'].ewm(span=fast, adjust=False).mean()
-    ema26 = df['Close'].ewm(span=slow, adjust=False).mean()
-    macd_line = ema12 - ema26
-    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
-    histogram = macd_line - signal_line
-    return macd_line, signal_line, histogram
+    return 100 - (100 / (1 + (gain / loss)))
+
+def calculate_macd(df):
+    ema12 = df['Close'].ewm(span=12, adjust=False).mean()
+    ema26 = df['Close'].ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    signal = macd.ewm(span=9, adjust=False).mean()
+    return macd, signal, macd - signal
+
 def calculate_atr(df, window=14):
-    high_low = df['High'] - df['Low']
-    high_close = (df['High'] - df['Close'].shift()).abs()
-    low_close = (df['Low'] - df['Close'].shift()).abs()
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = ranges.max(axis=1)
-    return true_range.rolling(window=window).mean()
-def get_foreign_holding(stock_id, days=180):
-    clean_id = stock_id.split('.')[0]
-    start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-    
-    # 這裡我們不使用 dl.get_data，改用直接請求 API 
+    tr = pd.concat([df['High']-df['Low'], (df['High']-df['Close'].shift()).abs(), (df['Low']-df['Close'].shift()).abs()], axis=1).max(axis=1)
+    return tr.rolling(window=window).mean()
+
+def get_foreign_holding(stock_id):
     url = "https://api.finmindtrade.com/api/v4/data"
-    parameter = {
-        "dataset": "TaiwanStockHoldingSharesPer",
-        "data_id": clean_id,
-        "start_date": start_date,
-        "token": FINMIND_TOKEN,
-    }
-    
+    params = {"dataset": "TaiwanStockHoldingSharesPer", "data_id": stock_id.split('.')[0], 
+              "start_date": (datetime.now()-timedelta(days=180)).strftime('%Y-%m-%d'), "token": FINMIND_TOKEN}
     try:
-        resp = requests.get(url, params=parameter)
-        data_json = resp.json()
-        
-        # 關鍵檢查：如果回傳裡面沒有 'data'，代表 Token 權限或流量有問題
-        if "data" not in data_json or not data_json["data"]:
-            return pd.DataFrame()
-            
-        df = pd.DataFrame(data_json["data"])
-        if not df.empty:
-            df['date'] = pd.to_datetime(df['date'])
-            return df.sort_values('date')
-    except:
-        return pd.DataFrame()
-        
-    return pd.DataFrame()
+        data = requests.get(url, params=params).json().get("data", [])
+        return pd.DataFrame(data).assign(date=lambda x: pd.to_datetime(x['date'])) if data else pd.DataFrame()
+    except: return pd.DataFrame()
 
 def get_monthly_revenue(stock_id):
-    clean_id = stock_id.split('.')[0]
-    # 月營收通常看長一點，抓 24 個月 (兩年) 比較好分析 YoY
-    start_date = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')
-    
     url = "https://api.finmindtrade.com/api/v4/data"
-    parameter = {
-        "dataset": "TaiwanStockMonthRevenue",
-        "data_id": clean_id,
-        "start_date": start_date,
-        "token": FINMIND_TOKEN,
-    }
-    
+    params = {"dataset": "TaiwanStockMonthRevenue", "data_id": stock_id.split('.')[0], 
+              "start_date": (datetime.now()-timedelta(days=730)).strftime('%Y-%m-%d'), "token": FINMIND_TOKEN}
     try:
-        resp = requests.get(url, params=parameter)
-        data_json = resp.json()
-        
-        if "data" in data_json and data_json["data"]:
-            df = pd.DataFrame(data_json["data"])
-            # 轉換日期格式
-            df['date'] = pd.to_datetime(df['revenue_year'].astype(str) + '-' + df['revenue_month'].astype(str) + '-01')
-            return df.sort_values('date')
-    except Exception as e:
-        st.error(f"月營超抓取失敗: {e}")
-        
-    return pd.DataFrame()
+        data = requests.get(url, params=params).json().get("data", [])
+        if not data: return pd.DataFrame()
+        df = pd.DataFrame(data)
+        df['date'] = pd.to_datetime(df['revenue_year'].astype(str) + '-' + df['revenue_month'].astype(str) + '-01')
+        return df.sort_values('date')
+    except: return pd.DataFrame()
 
+# ==========================================
+# 7. 數據處理、繪圖與 AI 診斷區
+# ==========================================
 if ticker_input:
     data = yf.download(ticker_input, period=period)
     if not data.empty:
+        # 數據清理與計算
+        if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
         data['MACD'], data['Signal'], data['Hist'] = calculate_macd(data)
         data['ATR'] = calculate_atr(data)
-        close_series = data['Close']
-        if isinstance(close_series, pd.DataFrame):
-            close_series = close_series.iloc[:, 0]  # 如果是多欄位，只取第一欄
-            
-        atr_series = data['ATR']
-        if isinstance(atr_series, pd.DataFrame):
-            atr_series = atr_series.iloc[:, 0]
-        data['ATR_Trailing'] = close_series.rolling(window=20).max() - (atr_series * 2)
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-
-        data['MA5'] = data['Close'].rolling(window=5).mean()
-        data['MA20'] = data['Close'].rolling(window=20).mean()
-        data['MA60'] = data['Close'].rolling(window=60).mean()
         data['RSI'] = calculate_rsi(data)
-
-        curr = data.iloc[-1]
-        prev = data.iloc[-2]
+        data['MA5'] = data['Close'].rolling(5).mean()
+        data['MA20'] = data['Close'].rolling(20).mean()
+        data['MA60'] = data['Close'].rolling(60).mean()
+        data['ATR_Trailing'] = data['Close'].rolling(20).max() - (data['ATR'] * 2)
+        
+        curr, prev = data.iloc[-1], data.iloc[-2]
         price = float(curr['Close'])
-        high_60d = float(data['High'].tail(60).max())
 
-        # --- 4. 指標儀表板 ---
+        # 個股損益試算
+        if ticker_input in active_costs:
+            st.write("---")
+            info = active_costs[ticker_input]
+            c = info['cost'] if isinstance(info, dict) else info
+            q = info['qty'] if isinstance(info, dict) else 1.0
+            pft = (price * q * 1000) - (c * q * 1000)
+            pft_r = (pft / (c * q * 1000)) * 100 if c > 0 else 0
+            
+            i1, i2, i3 = st.columns(3)
+            p_clr = "#FF4B4B" if pft > 0 else "#00B050"
+            i1.markdown(f"**預估損益 (報酬率)** \n<span style='color:{p_clr}; font-size:24px; font-weight:bold;'>{int(pft):,} ({pft_r:.2f}%)</span>", unsafe_allow_html=True)
+            i2.metric("投入本金", f"NT$ {int(c*q*1000):,}")
+            i3.metric("目前市值", f"NT$ {int(price*q*1000):,}")
+
+        # 指標儀表板
         st.subheader(f"📊 {ticker_input} {active_list.get(ticker_input, '')} 即時概況")
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         m1.metric("當前股價", f"{price:.2f}", f"{price - float(prev['Close']):.2f}", delta_color="inverse")
-        m2.metric("60日高點", f"{high_60d:.2f}")
-        m3.metric("5日均線", f"{float(curr['MA5']):.2f}")
-        m4.metric("月線(20MA)", f"{float(curr['MA20']):.2f}")
-        m5.metric("季線(60MA)", f"{float(curr['MA60']):.2f}")
+        m2.metric("60日高點", f"{data['High'].tail(60).max():.2f}")
+        m3.metric("5MA", f"{float(curr['MA5']):.2f}")
+        m4.metric("20MA", f"{float(curr['MA20']):.2f}")
+        m5.metric("60MA", f"{float(curr['MA60']):.2f}")
         m6.metric("RSI(14)", f"{float(curr['RSI']):.1f}")
 
-        # --- 6. 三大法人籌碼 ---
+        # 法人籌碼
         st.write("---")
         st.subheader("👥 昨日三大法人買賣數據 (張)")
-        f_net = 0
+        f_net, d_net, s_net = 0, 0, 0
         try:
-            target_id = ticker_input.split('.')[0]
-            df_chip = dl.taiwan_stock_institutional_investors(
-                stock_id=target_id, start_date=(datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
-            )
+            df_chip = dl.taiwan_stock_institutional_investors(stock_id=ticker_input.split('.')[0], start_date=(datetime.now()-timedelta(days=10)).strftime('%Y-%m-%d'))
             if not df_chip.empty:
                 last_day = df_chip['date'].iloc[-1]
-                today_chip = df_chip[df_chip['date'] == last_day]
-                def get_net(names):
-                    sub = today_chip[today_chip['name'].isin(names)]
-                    return (sub['buy'].sum() - sub['sell'].sum()) / 1000
-                f_net = get_net(['Foreign_Investor', 'Foreign_Investor_Excluded_Foreign_Investment_Trust'])
-                d_net = get_net(['Investment_Trust'])
-                s_net = get_net(['Dealer_Self', 'Dealer_proprietary', 'Dealer_Hedge'])
-                def color_metric(label, value):
-                    # 判斷顏色：正數紅色，負數綠色，0則白色
-                    color = "#FF4B4B" if value > 0 else ("#00B050" if value < 0 else "#FFFFFF")
-                    return f"""
-                    <div style="text-align: center;">
-                        <p style="color: gray; font-size: 16px; margin-bottom: 5px;">{label}</p>
-                        <p style="color: {color}; font-size: 32px; font-weight: bold; margin-top: 0px;">
-                            {int(value):,} 張
-                        </p>
-                    </div>
-                    """
-
-                c1, c2, c3 = st.columns(3)
-                # 使用 markdown 渲染 HTML
-                c1.markdown(color_metric("外資", f_net), unsafe_allow_html=True)
-                c2.markdown(color_metric("投信", d_net), unsafe_allow_html=True)
-                c3.markdown(color_metric("自營商", s_net), unsafe_allow_html=True)
+                day_data = df_chip[df_chip['date'] == last_day]
+                f_net = (day_data[day_data['name'].str.contains('Foreign')]['buy'].sum() - day_data[day_data['name'].str.contains('Foreign')]['sell'].sum()) / 1000
+                d_net = (day_data[day_data['name'] == 'Investment_Trust']['buy'].sum() - day_data[day_data['name'] == 'Investment_Trust']['sell'].sum()) / 1000
+                s_net = (day_data[day_data['name'].str.contains('Dealer')]['buy'].sum() - day_data[day_data['name'].str.contains('Dealer')]['sell'].sum()) / 1000
                 
-                st.write("") # 留一點間距
-                st.caption(f"數據更新日期：{last_day}")                
-        except:
-            st.error("籌碼抓取失敗")
+                c1, c2, c3 = st.columns(3)
+                for c, l, v in zip([c1, c2, c3], ["外資", "投信", "自營商"], [f_net, d_net, s_net]):
+                    clr = "#FF4B4B" if v > 0 else "#00B050"
+                    c.markdown(f"<div style='text-align:center;'><p style='color:gray;'>{l}</p><h2 style='color:{clr};'>{int(v):,}</h2></div>", unsafe_allow_html=True)
+                st.caption(f"更新日期：{last_day}")
+        except: st.error("籌碼抓取失敗")
 
-        # --- 6.5 外資持股變動繪圖 ---
-        df_holding = get_foreign_holding(ticker_input)
-        
-        if not df_holding.empty and 'ForeignInvestmentSharesRatio' in df_holding.columns:
+        # 外資持股與月營收圖表
+        df_hold = get_foreign_holding(ticker_input)
+        if not df_hold.empty:
             st.write("---")
             st.subheader("🏛️ 外資持股中長期變動")
-            
-            fig_holding = make_subplots(specs=[[{"secondary_y": True}]])
-            # 股價線
-            fig_holding.add_trace(
-                go.Scatter(x=data.index, y=data['Close'], name="股價", 
-                           line=dict(color='rgba(150, 150, 150, 0.5)', width=1)),
-                secondary_y=False
-            )
-            # 外資比例面積圖
-            fig_holding.add_trace(
-                go.Scatter(
-                    x=df_holding['date'], 
-                    y=df_holding['ForeignInvestmentSharesRatio'], 
-                    name="外資持股 %",
-                    fill='tozeroy',
-                    line=dict(color='#00CCFF', width=2),
-                    fillcolor='rgba(0, 204, 255, 0.15)'
-                ),
-                secondary_y=True
-            )
-            fig_holding.update_layout(height=400, template="plotly_dark", margin=dict(t=20, b=20))
-            st.plotly_chart(fig_holding, use_container_width=True)
-        else:
-            # 如果真的抓不到，就安靜地顯示一個小提示，或是直接跳過
-            st.caption("ℹ️ 目前無法取得外資詳細持股比例 (可能受限於 API 權限)")
+            fig_h = make_subplots(specs=[[{"secondary_y": True}]])
+            fig_h.add_trace(go.Scatter(x=data.index, y=data['Close'], name="股價", line=dict(color='gray', width=1)), secondary_y=False)
+            fig_h.add_trace(go.Scatter(x=df_hold['date'], y=df_hold['ForeignInvestmentSharesRatio'], name="外資持股%", fill='tozeroy', line=dict(color='#00CCFF')), secondary_y=True)
+            fig_h.update_layout(height=400, template="plotly_dark")
+            st.plotly_chart(fig_h, use_container_width=True)
 
-        # --- 6.6 月營收分析 ---
-        st.write("---")
-        st.subheader("📈 月營收成長趨勢 ")
-        
         df_rev = get_monthly_revenue(ticker_input)
-        
         if not df_rev.empty:
-            # 確保資料是按時間排序
-            df_rev = df_rev.sort_values('date')
-            
-            # --- 關鍵：自行計算成長率 ---
-            # 1. 計算月增率 (MoM): 跟前一列比
-            df_rev['computed_mom'] = df_rev['revenue'].pct_change(periods=1) * 100
-            
-            # 2. 計算年增率 (YoY): 跟前 12 列比 (去年同月)
-            df_rev['computed_yoy'] = df_rev['revenue'].pct_change(periods=12) * 100
-            
-            # --- 繪圖區 ---
-            fig_rev = go.Figure()
-            # 營收長條圖
-            fig_rev.add_trace(go.Bar(x=df_rev['date'], y=df_rev['revenue'], name="月營收", marker_color='rgba(0, 255, 150, 0.4)'))
-            
-            # 年增率折線圖 (YoY)
-            fig_rev.add_trace(go.Scatter(
-                x=df_rev['date'], y=df_rev['computed_yoy'], 
-                name="YoY (自算 %)", line=dict(color='#FF4B4B', width=2), yaxis="y2"
-            ))
-            
-            fig_rev.update_layout(
-                height=400, template="plotly_dark",
-                yaxis=dict(title="營收金額"),
-                yaxis2=dict(title="YoY (%)", overlaying="y", side="right", showgrid=False),
-                legend=dict(orientation="h", y=1.1)
-            )
-            st.plotly_chart(fig_rev, use_container_width=True)
-            
-            # --- 顯示數據指標 ---
-            latest = df_rev.iloc[-1]
-            c1, c2, c3 = st.columns(3)
-            
-            # 顯示金額 (轉成億元比較好讀)
-            rev_in_100m = latest['revenue'] / 100000000
-            c1.metric("最新月營收", f"{rev_in_100m:.2f} 億")
-            
-            # 顯示自算的 MoM
-            mom_val = latest['computed_mom']
-            c2.metric("月增率 (MoM)", f"{mom_val:.2f}%" if pd.notnull(mom_val) else "N/A", delta=f"{mom_val:.1f}%" if pd.notnull(mom_val) else None)
-            
-            # 顯示自算的 YoY
-            yoy_val = latest['computed_yoy']
-            c3.metric("年增率 (YoY)", f"{yoy_val:.2f}%" if pd.notnull(yoy_val) else "N/A", delta=f"{yoy_val:.1f}%" if pd.notnull(yoy_val) else None)
+            st.write("---")
+            st.subheader("📈 月營收成長趨勢")
+            df_rev['yoy'] = df_rev['revenue'].pct_change(12) * 100
+            fig_r = go.Figure()
+            fig_r.add_trace(go.Bar(x=df_rev['date'], y=df_rev['revenue'], name="營收", marker_color='rgba(0, 255, 150, 0.4)'))
+            fig_r.add_trace(go.Scatter(x=df_rev['date'], y=df_rev['yoy'], name="YoY%", line=dict(color='red'), yaxis="y2"))
+            fig_r.update_layout(height=400, template="plotly_dark", yaxis2=dict(overlaying="y", side="right"))
+            st.plotly_chart(fig_r, use_container_width=True)
 
-        else:
-            st.info("暫無月營收數據可供計算。")
-            
-        # --- 6. 繪製圖表 ---
-        fig = make_subplots(
-            rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.05,
-            subplot_titles=('K線與均線', '成交量', 'RSI 強弱指標', 'MCAD趨勢指標'),
-            row_width=[0.2, 0.2, 0.2, 0.4]
-        )
-        # 加入 ATR 移動止損線
-        fig.add_trace(go.Scatter(
-            x=data.index, 
-            y=data['ATR_Trailing'], 
-            name="ATR 2.0 止損線", 
-            line=dict(color='rgba(255, 165, 0, 0.5)', width=2, dash='dot'), # 橘色半透明虛線
-            fill=None
-        ), row=1, col=1)
-        fig.add_trace(go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name="K線", increasing_line_color='red', decreasing_line_color='green'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=data.index, y=data['MA5'], name="5MA", line=dict(color='cyan')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=data.index, y=data['MA20'], name="20MA", line=dict(color='orange')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=data.index, y=data['MA60'], name="60MA", line=dict(color='purple')), row=1, col=1)
-        
-        v_colors = ['red' if r['Close'] >= r['Open'] else 'green' for _, r in data.iterrows()]
-        fig.add_trace(go.Bar(x=data.index, y=data['Volume'], name="成交量", marker_color=v_colors), row=2, col=1)
-        
-        fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], name="RSI", line=dict(color='#ff7f0e')), row=3, col=1)
-        fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
-        
-        fig.update_layout(xaxis_rangeslider_visible=False, height=800, template="plotly_dark")
-        st.plotly_chart(fig, use_container_width=True)
+        # 核心 K 線圖
+        st.write("---")
+        fig_main = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_width=[0.2, 0.2, 0.2, 0.4])
+        fig_main.add_trace(go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name="K線"), row=1, col=1)
+        fig_main.add_trace(go.Scatter(x=data.index, y=data['MA20'], name="20MA", line=dict(color='orange')), row=1, col=1)
+        fig_main.add_trace(go.Scatter(x=data.index, y=data['ATR_Trailing'], name="ATR止損", line=dict(dash='dot', color='rgba(255,165,0,0.5)')), row=1, col=1)
+        fig_main.add_trace(go.Bar(x=data.index, y=data['Volume'], name="量"), row=2, col=1)
+        fig_main.add_trace(go.Scatter(x=data.index, y=data['RSI'], name="RSI", line=dict(color='yellow')), row=3, col=1)
+        fig_main.add_trace(go.Scatter(x=data.index, y=data['MACD'], name="MACD"), row=4, col=1)
+        fig_main.update_layout(height=900, template="plotly_dark", xaxis_rangeslider_visible=False)
+        st.plotly_chart(fig_main, use_container_width=True)
 
-        fig.add_trace(go.Scatter(x=data.index, y=data['MACD'], name="MACD", line=dict(color='white')), row=4, col=1)
-        fig.add_trace(go.Scatter(x=data.index, y=data['Signal'], name="Signal", line=dict(color='orange')), row=4, col=1)
-
-        h_colors = ['red' if val >= 0 else 'green' for val in data['Hist']]
-        fig.add_trace(go.Bar(x=data.index, y=data['Hist'], name="Histogram", marker_color=h_colors), row=4, col=1)
-
-        # --- 7. AI 診斷 (美化版) ---
+        # --- AI 診斷 ---
         st.write("---")
         st.subheader("💡 小鐵專屬：AI 投資策略診斷")
         
@@ -755,7 +480,7 @@ if ticker_input:
             else:
                 st.info(f"**空方縮手中**\n\n雖然是死叉，但綠柱開始縮短。代表最壞的情況可能快過去了，可以開始鎖定觀察。")
 
-        # --- 8. 綜合總結建議 ---
+        # --- 綜合總結建議 ---
         st.write("---")
         
         curr_atr = data['ATR'].iloc[-1]
@@ -914,6 +639,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
