@@ -481,6 +481,24 @@ if ticker_input:
 
         st.plotly_chart(fig_main, use_container_width=True)
 
+        guide_col1, guide_col2 = st.columns(2)
+        
+        with guide_col1:
+            st.markdown("""
+            **🟡 RSI 相對強弱指標**
+            * **超買區 (>70)**：代表股價過熱，需留意追高風險。
+            * **超賣區 (<30)**：代表股價過冷，可能是波段低點。
+            * **中軸線 (50)**：多空分水嶺，向上突破代表轉強。
+            """)
+            
+        with guide_col2:
+            st.markdown("""
+            **🔵 MACD 趨勢指標**
+            * **柱狀圖由負轉正**：代表動能轉強，漲勢開啟。
+            * **柱狀圖由正轉負**：代表動能減弱，需防範回檔。
+            * **快慢線金叉**：短線偏多訊號。
+            """
+
         # --- AI 診斷 ---
         st.write("---")
         st.subheader("💡 小鐵專屬：AI 投資策略診斷")
@@ -691,6 +709,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
