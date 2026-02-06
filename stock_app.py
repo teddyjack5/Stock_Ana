@@ -457,6 +457,12 @@ if ticker_input:
         ), row=1, col=1)
 
         # --- 第 2 欄：成交量 ---
+        fig_main.add_trace(go.Bar(
+            x=data.index, 
+            y=data['Volume'], 
+            name="成交量", 
+            marker_color='rgba(31, 119, 180, 0.7)' # 👈 經典券商藍，0.7 的透明度讓質感更好
+        ), row=2, col=1)
         fig_main.add_trace(go.Bar(x=data.index, y=data['Volume'], name="成交量", marker_color='rgba(128,128,128,0.5)'), row=2, col=1)
 
         # --- 第 3 欄：RSI ---
@@ -725,6 +731,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
