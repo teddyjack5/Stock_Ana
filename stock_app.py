@@ -481,23 +481,39 @@ if ticker_input:
 
         st.plotly_chart(fig_main, use_container_width=True)
 
-        guide_col1, guide_col2 = st.columns(2)
-        
-        with guide_col1:
-            st.markdown("""
-            **🟡 RSI 相對強弱指標**
-            * **超買區 (>70)**：代表股價過熱，需留意追高風險。
-            * **超賣區 (<30)**：代表股價過冷，可能是波段低點。
-            * **中軸線 (50)**：多空分水嶺，向上突破代表轉強。
-            """)
-            
-        with guide_col2:
-            st.markdown("""
-            **🔵 MACD 趨勢指標**
-            * **柱狀圖由負轉正**：代表動能轉強，漲勢開啟。
-            * **柱狀圖由正轉負**：代表動能減弱，需防範回檔。
-            * **快慢線金叉**：短線偏多訊號。
-            """)
+        latest_rsi = data['RSI'].iloc[-1]
+        latest_macd = data['MACD'].iloc[-1]
+        latest_signal = data['Signal'].iloc[-1]
+        latest_hist = data['Hist'].iloc[-1]
+        prev_hist = data['Hist'].iloc[-2]
+
+        diag_rsi, diag_macd = st.columns(2)
+
+        with diag_rsi:
+            if latest_rsi > 70:
+                st.error(f"🟡 **RSI：目前 {latest_rsi:.1f} (超買過熱)**")
+                st.caption("建議：股價進入過熱區，短線不宜追高，留意反轉風險。")
+            elif latest_rsi < 30:
+                st.success(f"🔵 **RSI：目前 {latest_rsi:.1f} (超跌機會)**")
+                st.caption("建議：股價進入超跌區，賣壓可能竭盡，可留意築底買點。")
+            else:
+                st.info(f"⚪ **RSI：目前 {latest_rsi:.1f} (盤整中性)**")
+                st.caption("建議：力道穩定，暫無明顯超買或超跌現象。")
+
+        with diag_macd:
+            # 判斷 MACD 柱狀體趨勢
+            if latest_hist > 0 and latest_hist > prev_hist:
+                st.success(f"📈 **MACD：多頭動能轉強**")
+                st.caption("建議：紅柱持續增長，股價處於攻擊波段。")
+            elif latest_hist > 0 and latest_hist <= prev_hist:
+                st.warning(f"⚠️ **MACD：多頭動能減弱**")
+                st.caption("建議：紅柱縮減，漲勢可能趨緩，留意高檔震盪。")
+            elif latest_hist < 0 and latest_hist < prev_hist:
+                st.error(f"📉 **MACD：空頭動能擴大**")
+                st.caption("建議：綠柱增長，趨勢偏弱，建議多看少動。")
+            else:
+                st.info(f"🔄 **MACD：跌勢收斂**")
+                st.caption("建議：綠柱縮減，空方力道減弱，等待金叉轉強訊號。")
 
         # --- AI 診斷 ---
         st.write("---")
@@ -709,6 +725,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
