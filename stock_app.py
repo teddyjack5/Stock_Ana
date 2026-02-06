@@ -345,7 +345,6 @@ def delete_confirm_dialog(ticker, name, db_file):
 
 # 2. 在側邊欄的刪除按鈕位置調用它
 if selected_ticker:
-    st.sidebar.write("---")
     # 取得名稱用於顯示
     current_name = st.session_state.db["list"].get(selected_ticker, selected_ticker)
     
@@ -915,6 +914,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
