@@ -317,17 +317,24 @@ selected_ticker = st.sidebar.selectbox(
     on_change=sync_stock_data     # 這是啟動自動更新的開關
 )
 
-if st.sidebar.button(f"🗑️ 刪除所選股票"):
-    # --- 關鍵修正：直接從第一層的 list 和 costs 刪除 ---
-    if selected_ticker in st.session_state.db["list"]:
-        del st.session_state.db["list"][selected_ticker]
+with st.sidebar.popover(f"🗑️ 刪除 {selected_ticker}", use_container_width=True):
+        st.warning(f"確定要將 {selected_ticker} 從此帳戶移除嗎？")
         
-    if selected_ticker in st.session_state.db["costs"]:
-        del st.session_state.db["costs"][selected_ticker]
-        
-    save_db(st.session_state.db, current_db_file)
-    st.success(f"已從 {current_db_file} 移除 {selected_ticker}")
-    st.rerun()
+        # 這是真正的刪除執行按鈕，加上 type="primary" 會顯示為醒目的顏色（通常是紅色或品牌色）
+        if st.button("確認刪除", type="primary", use_container_width=True):
+            # 1. 執行刪除邏輯
+            removed_name = st.session_state.db["list"].get(selected_ticker, selected_ticker)
+            st.session_state.db["list"].pop(selected_ticker, None)
+            st.session_state.db["costs"].pop(selected_ticker, None)
+            
+            # 2. 儲存
+            save_db(st.session_state.db, current_db_file)
+            
+            # 3. 通知 (會在介面刷新後依然顯示在右下角)
+            st.toast(f"🗑️ 已成功刪除 {removed_name}", icon="🔥")
+            
+            # 4. 刷新頁面
+            st.rerun()
 
 st.sidebar.markdown("---")
 custom_ticker = st.sidebar.text_input("🔍 全域搜尋 (不加入庫存)", "")
@@ -891,6 +898,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
