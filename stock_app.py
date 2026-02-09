@@ -135,31 +135,44 @@ def delete_confirm_dialog(ticker, name, db_file):
 @st.dialog("🚀 全台股法人強勢掃描器", width="large")
 def professional_scan_dialog():
     st.write("### 🎯 專業經理人佈局清單")
-    st.info("策略邏輯：投信單日買超前 20 名 + 股價站穩月線 (MA20)")
+    st.info("策略邏輯：投信單日買超張數排行 + 股價站穩月線 (MA20)")
     
     try:
-        # 取得最新交易日 (自動避開假日)
         check_date = datetime.now()
-        # 若在 14:30 前，則看前一天的資料
+        # 法人資料通常下午 3 點後才完整
         if check_date.hour < 15:
             check_date -= timedelta(days=1)
         
+        # 避開假日 (如果是週一早上看，要抓上週五)
+        if check_date.weekday() == 5: # 週六
+            check_date -= timedelta(days=1)
+        elif check_date.weekday() == 6: # 週日
+            check_date -= timedelta(days=2)
+            
         target_date = check_date.strftime('%Y-%m-%d')
         st.caption(f"📅 分析基準日：{target_date}")
 
-        with st.spinner("正在向市場索取數據..."):
-            # 抓取投信買賣超排行
-            df_inst = dl.taiwan_stock_institutional_investors_ranking(
-                data_id="all",
-                start_date=target_date
+        with st.spinner("正在分析法人籌碼流向..."):
+            # --- 修正處：使用通用接口抓取全市場法人買賣超 ---
+            df_inst = dl.fetch_data(
+                dataset="TaiwanStockInstitutionalInvestors",
+                start_date=target_date,
+                end_date=target_date
             )
         
-        if df_inst.empty:
+        if df_inst is None or df_inst.empty:
             st.warning("目前時段無法取得排行數據，請於收盤後 15:00 再試。")
             return
 
-        # 篩選投信 (Investment_Trust) 買超排行
-        it_top = df_inst[df_inst['name'] == 'Investment_Trust'].nlargest(20, 'buy')
+        # 篩選投信 (Investment_Trust) 且買超張數大於 0 的標的
+        it_buys = df_inst[
+            (df_inst['name'] == 'Investment_Trust') & 
+            (df_inst['buy'] > 0)
+        ].copy()
+        
+        # 換算成「張」，並取買超前 20 名
+        it_buys['buy_sheets'] = it_buys['buy'] // 1000
+        it_top = it_buys.nlargest(20, 'buy_sheets')
         
         results = []
         p_bar = st.progress(0)
@@ -167,37 +180,35 @@ def professional_scan_dialog():
         for i, (idx, row) in enumerate(it_top.iterrows()):
             stock_id = f"{row['stock_id']}.TW"
             try:
-                # 快速驗證技術面：只下載 1 個月的數據
+                # 驗證技術面
                 df_p = yf.download(stock_id, period="20d", progress=False)
                 if len(df_p) < 20: continue
                 
                 c_price = df_p['Close'].iloc[-1]
                 ma20 = df_p['Close'].rolling(20).mean().iloc[-1]
                 
-                # 核心篩選：股價必須在月線之上 (經理人強勢股邏輯)
+                # 核心篩選：股價站穩月線
                 if c_price > ma20:
                     results.append({
                         "代號": stock_id,
-                        "名稱": row.get('stock_name', '未知'),
-                        "投信買超(張)": int(row['buy'] / 1000),
+                        "買超(張)": int(row['buy_sheets']),
                         "目前股價": f"{float(c_price):.2f}",
-                        "技術面": "✅ 站穩月線",
-                        "推薦指數": "⭐⭐⭐⭐" if c_price > ma20 * 1.05 else "⭐⭐⭐⭐⭐"
+                        "技術位置": "✅ 強勢",
+                        "推薦度": "⭐⭐⭐⭐⭐"
                     })
             except: continue
             p_bar.progress((i + 1) / len(it_top))
 
         if results:
-            st.success(f"掃描完畢！共有 {len(results)} 檔標的符合經理人選股標準。")
+            st.success(f"掃描完畢！發現 {len(results)} 檔符合經理人選股標準。")
             st.table(pd.DataFrame(results))
-            st.caption("💡 註：五顆星代表股價剛突破月線不久，風險回報比較佳。")
         else:
-            st.warning("今日法人買盤分散，未發現明顯強勢標的。")
+            st.warning("今日法人買盤較為分散，未發現明顯站上月線的強勢股。")
             
     except Exception as e:
         st.error(f"掃描過程發生錯誤: {e}")
 
-    if st.button("關閉", use_container_width=True):
+    if st.button("關閉視窗", use_container_width=True, key="close_scan_dialog"):
         st.rerun()
 
 # ==========================================
@@ -816,4 +827,5 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
