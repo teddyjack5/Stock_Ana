@@ -244,6 +244,81 @@ def show_annual_report_dialog():
             
             st.dataframe(styled_df, hide_index=True, use_container_width=True)
 
+@st.dialog("🧪 投資策略模擬回測", width="large")
+def backtest_dialog(ticker):
+    """支援單筆投入與定期定額的雙模回測工具"""
+    st.write(f"### 模擬標的：{ticker}")
+    
+    # 策略參數設定
+    col_mode, col_amt, col_year = st.columns([1.5, 2, 2])
+    mode = col_mode.radio("選擇投資模式", ["單筆投入", "定期定額"])
+    invest_amt = col_amt.number_input(f"{mode}金額 (NT$)", value=100000 if mode == "單筆投入" else 10000, step=5000)
+    years = col_year.slider("回測年數", 1, 10, 3)
+    
+    start_date = datetime.now() - timedelta(days=years*365)
+    
+    st.divider()
+    
+    with st.spinner("讀取數據並計算中..."):
+        data = yf.download(ticker, start=start_date, progress=False)
+        
+        if data.empty:
+            st.error("無法取得歷史數據。")
+            return
+
+        # 核心邏輯計算
+        history_data = []
+        if mode == "單筆投入":
+            first_price = data['Close'].iloc[0]
+            total_shares = invest_amt / first_price
+            total_invested = invest_amt
+            
+            # 建立每日市值變化
+            for date, row in data.iterrows():
+                current_val = total_shares * row['Close']
+                history_data.append({"日期": date, "累計投入": total_invested, "當前市值": current_val})
+        
+        else: # 定期定額
+            monthly_data = data.resample('MS').first()
+            total_shares = 0
+            total_invested = 0
+            for date, row in monthly_data.iterrows():
+                price = row['Close']
+                if pd.isna(price): continue
+                shares_bought = invest_amt / price
+                total_shares += shares_bought
+                total_invested += invest_amt
+                history_data.append({"日期": date, "累計投入": total_invested, "當前市值": total_shares * price})
+
+        # 計算績效指標
+        df_res = pd.DataFrame(history_data)
+        final_value = df_res["當前市值"].iloc[-1]
+        total_invested = df_res["累計投入"].iloc[-1]
+        profit = final_value - total_invested
+        roi = (profit / total_invested) * 100
+        
+        # 顯示指標卡
+        c1, c2, c3 = st.columns(3)
+        c1.metric("總投入成本", f"${total_invested:,.0f}")
+        c2.metric("最終市值", f"${final_value:,.0f}", delta=f"{profit:,.0f}")
+        c3.metric("總報酬率", f"{roi:.2f}%")
+
+        # 繪製圖表
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df_res["日期"], y=df_res["累計投入"], name="成本線", line=dict(color='gray', dash='dot')))
+        fig.add_trace(go.Scatter(x=df_res["日期"], y=df_res["當前市值"], name="價值走勢", fill='tozeroy', line=dict(color='#FF4B4B' if profit > 0 else '#00B050')))
+        
+        fig.update_layout(
+            title=f"{ticker} {years}年 {mode} 績效走勢",
+            hovermode="x unified",
+            template="plotly_dark",
+            yaxis_title="金額 (NT$)"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # 專家結論
+        st.success(f"💡 測試結果：在過去 {years} 年中，使用 **{mode}** 策略，你的資產增長了 {roi:.2f}%。")
+
 # ==========================================
 # 2. 系統初始化與 API 設定
 # ==========================================
@@ -413,9 +488,6 @@ if col_pnl1.button("💰 紀錄賣出", use_container_width=True, help="點擊�
 if col_pnl2.button("📊 查看報表", use_container_width=True, help="開啟年度獲利結算表"):
     show_annual_report_dialog()
 
-if st.sidebar.button("🧪 執行定期定額回測", use_container_width=True, help="模擬過去幾年定期定額這檔股票的勝率"):
-    backtest_dialog(ticker_input)
-
 st.sidebar.write("---")
 
 # 1. 取得清單
@@ -450,6 +522,14 @@ custom_search = st.sidebar.text_input("🔍 全域搜尋 (不加入庫存)", "")
 ticker_input = custom_search if custom_search else selected_ticker
 period = st.sidebar.selectbox("分析時間範圍", ["5d", "1mo", "6mo", "1y", "2y"], index=2)
 
+st.sidebar.write("---")
+st.sidebar.subheader("🔬 策略實驗室")
+if st.sidebar.button("🧪 執行投資模擬回測", use_container_width=True):
+    if ticker_input: # 👈 加一個安全檢查，確保有代號才執行
+        backtest_dialog(ticker_input)
+    else:
+        st.sidebar.error("請先選取個股或輸入搜尋代號")
+        
 # --- 帳務管理連動區 ---
 current_costs = st.session_state.db["costs"].get(selected_ticker, {"cost": 0.0, "qty": 0.0})
 
@@ -919,108 +999,4 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
-
-@st.dialog("🧪 投資策略模擬回測", width="large")
-def backtest_dialog(ticker):
-    """支援單筆投入與定期定額的雙模回測工具"""
-    st.write(f"### 模擬標的：{ticker}")
-    
-    # 策略參數設定
-    col_mode, col_amt, col_year = st.columns([1.5, 2, 2])
-    mode = col_mode.radio("選擇投資模式", ["單筆投入", "定期定額"])
-    invest_amt = col_amt.number_input(f"{mode}金額 (NT$)", value=100000 if mode == "單筆投入" else 10000, step=5000)
-    years = col_year.slider("回測年數", 1, 10, 3)
-    
-    start_date = datetime.now() - timedelta(days=years*365)
-    
-    st.divider()
-    
-    with st.spinner("讀取數據並計算中..."):
-        data = yf.download(ticker, start=start_date, progress=False)
-        
-        if data.empty:
-            st.error("無法取得歷史數據。")
-            return
-
-        # 核心邏輯計算
-        history_data = []
-        if mode == "單筆投入":
-            first_price = data['Close'].iloc[0]
-            total_shares = invest_amt / first_price
-            total_invested = invest_amt
-            
-            # 建立每日市值變化
-            for date, row in data.iterrows():
-                current_val = total_shares * row['Close']
-                history_data.append({"日期": date, "累計投入": total_invested, "當前市值": current_val})
-        
-        else: # 定期定額
-            monthly_data = data.resample('MS').first()
-            total_shares = 0
-            total_invested = 0
-            for date, row in monthly_data.iterrows():
-                price = row['Close']
-                if pd.isna(price): continue
-                shares_bought = invest_amt / price
-                total_shares += shares_bought
-                total_invested += invest_amt
-                history_data.append({"日期": date, "累計投入": total_invested, "當前市值": total_shares * price})
-
-        # 計算績效指標
-        df_res = pd.DataFrame(history_data)
-        final_value = df_res["當前市值"].iloc[-1]
-        total_invested = df_res["累計投入"].iloc[-1]
-        profit = final_value - total_invested
-        roi = (profit / total_invested) * 100
-        
-        # 顯示指標卡
-        c1, c2, c3 = st.columns(3)
-        c1.metric("總投入成本", f"${total_invested:,.0f}")
-        c2.metric("最終市值", f"${final_value:,.0f}", delta=f"{profit:,.0f}")
-        c3.metric("總報酬率", f"{roi:.2f}%")
-
-        # 繪製圖表
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df_res["日期"], y=df_res["累計投入"], name="成本線", line=dict(color='gray', dash='dot')))
-        fig.add_trace(go.Scatter(x=df_res["日期"], y=df_res["當前市值"], name="價值走勢", fill='tozeroy', line=dict(color='#FF4B4B' if profit > 0 else '#00B050')))
-        
-        fig.update_layout(
-            title=f"{ticker} {years}年 {mode} 績效走勢",
-            hovermode="x unified",
-            template="plotly_dark",
-            yaxis_title="金額 (NT$)"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        # 專家結論
-        st.success(f"💡 測試結果：在過去 {years} 年中，使用 **{mode}** 策略，你的資產增長了 {roi:.2f}%。")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
