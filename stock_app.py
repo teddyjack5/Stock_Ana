@@ -182,29 +182,41 @@ if 'db' not in st.session_state:
 # 3. 側邊欄：帳戶管理與安全性
 # ==========================================
 st.sidebar.title("📁 帳戶與庫存")
-st.sidebar.subheader("📤 匯入庫存檔案")
-uploaded_file = st.sidebar.file_uploader("選擇 JSON 檔案", type=["json"], help="請上傳由本系統產生的 .json 備份檔")
-if uploaded_file is not None:
-    # 建立一個「儲存上傳檔案」的按鈕，避免檔案一選取就重複執行
-    if st.sidebar.button("確認匯入檔案", use_container_width=True):
-        try:
-            # 讀取上傳的內容
-            file_details = {"FileName": uploaded_file.name, "FileType": uploaded_file.type}
-            new_data = json.load(uploaded_file)
-            
-            # 簡單驗證檔案格式是否正確 (檢查是否有必要的 key)
-            if "list" in new_data and "costs" in new_data:
-                # 儲存到本地端
-                with open(uploaded_file.name, "w", encoding="utf-8") as f:
-                    json.dump(new_data, f, ensure_ascii=False, indent=4)
-                
-                st.sidebar.success(f"✅ 成功匯入：{uploaded_file.name}")
-                st.session_state.current_file = uploaded_file.name # 切換到新上傳的檔案
-                st.rerun()
-            else:
-                st.sidebar.error("❌ 檔案格式不符，請上傳正確的庫存 JSON。")
-        except Exception as e:
-            st.sidebar.error(f"❌ 解析失敗: {e}")
+st.sidebar.write("### 🗄️ 帳戶備份")
+col_backup1, col_backup2 = st.sidebar.columns(2)
+
+# 1. 下載按鈕 (Icon 化)
+with open(current_db_file, "r", encoding="utf-8") as f:
+    col_backup1.download_button(
+        label="📥 下載備份",
+        data=f,
+        file_name=current_db_file,
+        mime="application/json",
+        use_container_width=True,
+        help="下載當前庫存 JSON 檔"
+    )
+
+# 2. 上傳按鈕 (使用 Popover 隱藏大視窗)
+with col_backup2.popover("📤 匯入檔案", use_container_width=True):
+    st.write("### 📂 上傳庫存備份")
+    uploaded_file = st.file_uploader("請選擇 .json 檔案", type=["json"])
+    
+    if uploaded_file is not None:
+        if st.button("🚀 確認匯入並切換", use_container_width=True):
+            try:
+                new_data = json.load(uploaded_file)
+                if "list" in new_data and "costs" in new_data:
+                    # 儲存上傳的檔案到本地
+                    with open(uploaded_file.name, "w", encoding="utf-8") as f:
+                        json.dump(new_data, f, ensure_ascii=False, indent=4)
+                    
+                    st.success(f"已匯入: {uploaded_file.name}")
+                    st.session_state.current_file = uploaded_file.name
+                    st.rerun()
+                else:
+                    st.error("格式錯誤：找不到 list 或 costs 欄位")
+            except Exception as e:
+                st.error(f"解析失敗: {e}")
 
 db_files = [f for f in os.listdir('.') if f.endswith('.json') and f != "package.json"]
 if not db_files: db_files = ["my_stock_db.json"]
@@ -230,15 +242,6 @@ with st.sidebar.expander("🗑️ 危險區域 (刪除帳戶)"):
                 st.session_state.current_file = None
                 st.rerun()
             else: st.error("至少需保留一個帳戶")
-
-with open(current_db_file, "r", encoding="utf-8") as f:
-    st.sidebar.download_button(
-        label="📥 下載當前帳戶備份",
-        data=f,
-        file_name=current_db_file,
-        mime="application/json",
-        use_container_width=True
-    )
 
 st.sidebar.divider()
 
@@ -817,6 +820,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
