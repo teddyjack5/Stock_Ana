@@ -101,20 +101,49 @@ def show_full_portfolio_report(active_costs, active_list):
 
 @st.dialog("➕ 新增股票至清單")
 def add_stock_dialog(db_file):
-    """新增股票代號與名稱"""
+    """新增股票代號與名稱（含自動校正與驗證）"""
     col1, col2 = st.columns(2)
-    new_id = col1.text_input("股票代號", placeholder="2330.TW").upper()
+    # 使用者輸入 raw_id
+    raw_id = col1.text_input("股票代號", placeholder="例如: 0050 或 2330").strip()
     new_name = col2.text_input("股票名稱", placeholder="台積電")
     
     st.write("---")
     c1, c2 = st.columns(2)
-    if c1.button("取消", use_container_width=True): st.rerun()
+    
+    if c1.button("取消", use_container_width=True): 
+        st.rerun()
+        
     if c2.button("確認加入", type="primary", use_container_width=True):
-        if new_id and new_name:
-            st.session_state.db["list"][new_id] = new_name
+        if raw_id and new_name:
+            # --- 邏輯修正：自動補齊 .TW ---
+            formatted_id = raw_id.upper()
+            if "." not in formatted_id:
+                formatted_id = f"{formatted_id}.TW"
+            
+            with st.spinner(f"正在驗證代號 {formatted_id}..."):
+                # 測試是否能抓到報價
+                check_ticker = yf.Ticker(formatted_id)
+                try:
+                    # 抓取最近 1 天的資訊來確認代號是否存在
+                    info = check_ticker.history(period="1d")
+                    if info.empty:
+                        # 如果 .TW 抓不到，嘗試 .TWO (上櫃)
+                        alt_id = raw_id.upper() + ".TWO"
+                        info_alt = yf.Ticker(alt_id).history(period="1d")
+                        if not info_alt.empty:
+                            formatted_id = alt_id
+                        else:
+                            st.error(f"❌ 找不到股票代號: {raw_id}，請檢查號碼是否正確。")
+                            return
+                except:
+                    st.error("⚠️ 驗證過程發生網路錯誤，請稍後再試。")
+                    return
+
+            # --- 驗證通過，正式寫入 ---
+            st.session_state.db["list"][formatted_id] = new_name
             save_db(st.session_state.db, db_file)
             st.balloons()
-            st.toast(f"✅ 已成功加入 {new_name}", icon="💰")
+            st.toast(f"✅ 已成功加入 {new_name} ({formatted_id})", icon="💰")
             st.rerun()
         else:
             st.error("請完整填寫代號與名稱")
@@ -732,6 +761,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
