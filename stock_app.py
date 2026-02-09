@@ -241,7 +241,6 @@ def professional_scan_dialog():
 
     if st.button("關閉視窗", use_container_width=True, key="btn_close_scanner_final"):
         st.rerun()
-
 # ==========================================
 # 2. 系統初始化與 API 設定
 # ==========================================
@@ -858,6 +857,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
