@@ -732,3 +732,5 @@ if show_news and ticker_input:
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
 
+st.write("### 🔍 偵測到的檔案清單：")
+st.write([f for f in os.listdir('.') if f.endswith('.json')])
