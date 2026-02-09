@@ -153,7 +153,7 @@ def professional_scan_dialog():
                 "dataset": "TaiwanStockInstitutionalInvestors",
                 "start_date": target_date,
                 "end_date": target_date,
-                "token": FINMIND_TOKEN
+                #"token": FINMIND_TOKEN
             }
             
             # --- 核心修正點：模擬瀏覽器身份 ---
@@ -835,6 +835,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
