@@ -198,47 +198,55 @@ def record_sale_dialog(db_file):
 
 @st.dialog("🗓️ 年度獲利結算報表", width="large")
 def show_annual_report_dialog():
-    """顯示已實現損益的年度統計報表"""
+    """顯示已實現損益的年度統計報表 (台股配色版)"""
     pnl_data = st.session_state.db.get("realized_pnl", [])
     
     if not pnl_data:
-        st.info("目前尚無賣出紀錄。請先透過側邊欄「紀錄賣出」功能新增資料。")
+        st.info("目前尚無賣出紀錄。請先透過側邊欄「💰 紀錄賣出」功能新增資料。")
         return
 
     df_pnl = pd.DataFrame(pnl_data)
     df_pnl['date'] = pd.to_datetime(df_pnl['date'])
     df_pnl['年份'] = df_pnl['date'].dt.year
     
-    # 年度統計彙整
+    # 年度統計摘要
     summary = df_pnl.groupby('年份').agg({
         'profit': 'sum',
-        'ticker': 'count'
-    }).rename(columns={'ticker': '交易筆數', 'profit': '年度總損益'}).sort_index(ascending=False)
+        'date': 'count'
+    }).rename(columns={'date': '交易筆數', 'profit': '年度總損益'}).sort_index(ascending=False)
+
+    # 定義配色函數：正數紅、負數綠
+    def color_pnl(val):
+        if isinstance(val, (int, float)):
+            color = '#FF4B4B' if val > 0 else ('#00B050' if val < 0 else 'white')
+            return f'color: {color}'
+        return ''
 
     st.subheader("📊 年度數據摘要")
-    st.table(summary.style.format({"年度總損益": "NT$ {:,.0f}"}))
+    # 套用樣式到「年度總損益」欄位
+    st.table(summary.style.format({"年度總損益": "NT$ {:,.0f}"}).applymap(color_pnl, subset=['年度總損益']))
 
     st.divider()
-
-    # 詳細清單 (依年份展開)
     st.subheader("📑 詳細交易紀錄")
     years = sorted(df_pnl['年份'].unique(), reverse=True)
+    
     for y in years:
         with st.expander(f"📅 {y} 年詳細清單"):
             year_df = df_pnl[df_pnl['年份'] == y].sort_values('date', ascending=False)
+            
+            # 使用 dataframe 搭配 style 套用顏色
+            styled_df = year_df[['date', 'ticker', 'name', 'profit', 'pct']].style.applymap(
+                color_pnl, subset=['profit', 'pct']
+            ).format({
+                'profit': 'NT$ {:,.0f}',
+                'pct': '{:.2f}%'
+            })
+            
             st.dataframe(
-                year_df[['date', 'ticker', 'name', 'profit', 'pct']],
-                column_config={
-                    "date": "日期",
-                    "ticker": "代號",
-                    "name": "名稱",
-                    "profit": st.column_config.NumberColumn("獲利金額", format="NT$ %d"),
-                    "pct": st.column_config.NumberColumn("百分比", format="%.2f%%")
-                },
-                hide_index=True,
+                styled_df,
+                hide_index=True, 
                 use_container_width=True
             )
-
 # ==========================================
 # 2. 系統初始化與 API 設定
 # ==========================================
@@ -911,6 +919,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
