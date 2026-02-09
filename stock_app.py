@@ -516,7 +516,6 @@ if selected_ticker:
     if st.sidebar.button(f"🗑️ 刪除 {selected_ticker}", use_container_width=True):
         delete_confirm_dialog(selected_ticker, active_list.get(selected_ticker), current_db_file)
 
-st.sidebar.write("---")
 custom_search = st.sidebar.text_input("🔍 全域搜尋 (不加入庫存)", "")
 ticker_input = custom_search if custom_search else selected_ticker
 period = st.sidebar.selectbox("分析時間範圍", ["5d", "1mo", "6mo", "1y", "2y"], index=2)
@@ -998,5 +997,6 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
