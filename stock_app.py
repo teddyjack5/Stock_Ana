@@ -132,92 +132,6 @@ def delete_confirm_dialog(ticker, name, db_file):
         st.toast(f"🗑️ 已成功刪除 {name}", icon="🔥")
         st.rerun()
 
-@st.dialog("🚀 全台股法人強勢掃描器", width="large")
-def professional_scan_dialog():
-    st.write("### 🎯 專業經理人佈局清單")
-    
-    try:
-        # 1. 處理日期 (維持不變)
-        check_date = datetime.now()
-        if check_date.hour < 15:
-            check_date -= timedelta(days=1)
-        while check_date.weekday() >= 5:
-            check_date -= timedelta(days=1)
-        target_date = check_date.strftime('%Y-%m-%d')
-        st.caption(f"📅 分析基準日：{target_date}")
-
-        with st.spinner("正在安全聯繫數據伺服器..."):
-            # 2. 加入 Headers 偽裝與更嚴謹的請求
-            url = "https://api.finmindtrade.com/api/v4/data"
-            params = {
-                "dataset": "TaiwanStockInstitutionalInvestors",
-                "start_date": target_date,
-                "end_date": target_date,
-                #"token": FINMIND_TOKEN
-            }
-            
-            # --- 核心修正點：模擬瀏覽器身份 ---
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            
-            res = requests.get(url, params=params, headers=headers, timeout=10)
-            data_json = res.json()
-
-            # 3. 診斷回傳內容
-            if data_json.get("status") != 200:
-                # 這裡增加一個詳細診斷，告訴你到底是什麼壞了
-                error_msg = data_json.get("msg", "未知伺服器錯誤")
-                st.error(f"❌ API 拒絕存取：{error_msg}")
-                st.info("💡 建議檢查：1. Token 是否過期 2. 今日是否為國定假日 3. 網路連線是否正常")
-                return
-
-            raw_list = data_json.get("data", [])
-            if not raw_list:
-                st.warning(f"⚠️ {target_date} 數據尚未準備就緒，建議下午 15:30 後重試。")
-                return
-                
-            df_inst = pd.DataFrame(raw_list)
-
-        # 4. 資料過濾邏輯 (維持不變)
-        it_buys = df_inst[
-            (df_inst['name'].str.contains('Investment_Trust', na=False) | 
-             df_inst['name'].str.contains('投信', na=False)) & 
-            (df_inst['buy'] > 0)
-        ].copy()
-        
-        if it_buys.empty:
-            st.warning("📊 今日投信買超力道較弱，無顯著標的。")
-            return
-
-        it_buys['buy_sheets'] = it_buys['buy'] // 1000
-        it_top = it_buys.nlargest(10, 'buy_sheets') # 取前 10 名更快速
-        
-        # 5. yfinance 驗證... (後面程式碼同上個版本)
-        results = []
-        p_bar = st.progress(0)
-        for i, (idx, row) in enumerate(it_top.iterrows()):
-            stock_id = str(row['stock_id'])
-            full_ticker = f"{stock_id}.TW" if ".TW" not in stock_id else stock_id
-            try:
-                df_p = yf.download(full_ticker, period="20d", progress=False)
-                if len(df_p) < 10: continue
-                c_price = float(df_p['Close'].iloc[-1])
-                ma20 = float(df_p['Close'].rolling(20).mean().iloc[-1])
-                if c_price > ma20:
-                    results.append({"代號": full_ticker, "買超(張)": int(row['buy_sheets']), "現價": f"{c_price:.2f}", "狀態": "🔥 強勢"})
-            except: continue
-            p_bar.progress((i + 1) / len(it_top))
-
-        if results:
-            st.success("✅ 掃描完成")
-            st.table(pd.DataFrame(results))
-            
-    except Exception as e:
-        st.error(f"⚠️ 系統發生例外：{str(e)}")
-
-    if st.button("關閉", key="close_v5"):
-        st.rerun()
         
 # ==========================================
 # 2. 系統初始化與 API 設定
@@ -374,23 +288,6 @@ if st.sidebar.button("💾 儲存帳務修改"):
     save_db(st.session_state.db, current_db_file)
     st.sidebar.success("帳務已更新")
     st.rerun()
-
-#智能選股區
-st.sidebar.divider()
-st.sidebar.subheader("🚀 智能雷達")
-
-# 判斷收盤狀態
-now = datetime.now()
-is_after_market = now.hour >= 15 # 下午三點後法人數據較完整
-
-button_label = "🔥 查看今日強勢清單" if is_after_market else "⏳ 預覽昨日強勢清單"
-if st.sidebar.button(button_label, use_container_width=True, type="primary"):
-    professional_scan_dialog()
-
-if is_after_market:
-    st.sidebar.caption("✅ 今日收盤數據已就緒")
-else:
-    st.sidebar.caption("💡 下午 3:00 後將更新今日數據")
 
 show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
 
@@ -835,6 +732,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
