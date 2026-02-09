@@ -488,7 +488,6 @@ if col_pnl2.button("📊 查看報表", use_container_width=True, help="開啟�
     show_annual_report_dialog()
 
 st.sidebar.write("---")
-
 # 1. 取得清單
 ticker_options = list(st.session_state.db["list"].keys())
 
@@ -530,7 +529,7 @@ if st.sidebar.button("🧪 執行投資模擬回測", use_container_width=True):
         
 # --- 帳務管理連動區 ---
 current_costs = st.session_state.db["costs"].get(selected_ticker, {"cost": 0.0, "qty": 0.0})
-
+st.sidebar.write("---")
 st.sidebar.subheader(f"💰 帳務管理: {st.session_state.db['list'].get(selected_ticker, '未知')}")
 
 # 使用動態 Key 確保切換個股時輸入框會刷新 value
@@ -997,6 +996,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
