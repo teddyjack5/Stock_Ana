@@ -26,6 +26,7 @@ def load_db(filename):
             "2356.TW": {"cost": 49.0, "qty": 1.0},
             "0050.TW": {"cost": 70.0, "qty": 1.0}
         }
+        "realized_pnl": []
     }
     if os.path.exists(filename):
         try:
@@ -41,6 +42,7 @@ def load_db(filename):
                     }
                 content.setdefault("list", {})
                 content.setdefault("costs", {})
+                content.setdefault("realized_pnl", [])
                 return content
         except Exception as e:
             st.error(f"讀取 JSON 出錯: {e}")
@@ -156,6 +158,75 @@ def delete_confirm_dialog(ticker, name, db_file):
         st.session_state.selected_ticker = None
         st.session_state.temp_ticker = None
         st.rerun()
+
+@st.dialog("💰 紀錄已實現獲利")
+def record_sale_dialog(db_file):
+    """手動紀錄賣出獲利的對話框"""
+    date = st.date_input("賣出日期", datetime.now())
+    # 讓使用者從清單選取，也可以手動輸入
+    ticker_list = list(st.session_state.db["list"].keys())
+    selected_t = st.selectbox("選取股票", ticker_list, format_func=lambda x: f"{x} {st.session_state.db['list'].get(x, '')}")
+    
+    col1, col2 = st.columns(2)
+    profit_amt = col1.number_input("獲利金額 (NT$)", step=1000)
+    profit_pct = col2.number_input("獲利百分比 (%)", step=0.1, format="%.2f")
+    
+    st.write("---")
+    if st.button("確認存入帳本", type="primary", use_container_width=True):
+        record = {
+            "date": str(date),
+            "ticker": selected_t,
+            "name": st.session_state.db["list"].get(selected_t, "未知"),
+            "profit": profit_amt,
+            "pct": profit_pct
+        }
+        st.session_state.db["realized_pnl"].append(record)
+        save_db(st.session_state.db, db_file)
+        st.success(f"✅ 已紀錄 {record['name']} 的獲利！")
+        st.rerun()
+
+@st.dialog("🗓️ 年度獲利結算報表", width="large")
+def show_annual_report_dialog():
+    """顯示已實現損益的年度統計報表"""
+    pnl_data = st.session_state.db.get("realized_pnl", [])
+    
+    if not pnl_data:
+        st.info("目前尚無賣出紀錄。請先透過側邊欄「紀錄賣出」功能新增資料。")
+        return
+
+    df_pnl = pd.DataFrame(pnl_data)
+    df_pnl['date'] = pd.to_datetime(df_pnl['date'])
+    df_pnl['年份'] = df_pnl['date'].dt.year
+    
+    # 年度統計彙整
+    summary = df_pnl.groupby('年份').agg({
+        'profit': 'sum',
+        'ticker': 'count'
+    }).rename(columns={'ticker': '交易筆數', 'profit': '年度總損益'}).sort_index(ascending=False)
+
+    st.subheader("📊 年度數據摘要")
+    st.table(summary.style.format({"年度總損益": "NT$ {:,.0f}"}))
+
+    st.divider()
+
+    # 詳細清單 (依年份展開)
+    st.subheader("📑 詳細交易紀錄")
+    years = sorted(df_pnl['年份'].unique(), reverse=True)
+    for y in years:
+        with st.expander(f"📅 {y} 年詳細清單"):
+            year_df = df_pnl[df_pnl['年份'] == y].sort_values('date', ascending=False)
+            st.dataframe(
+                year_df[['date', 'ticker', 'name', 'profit', 'pct']],
+                column_config={
+                    "date": "日期",
+                    "ticker": "代號",
+                    "name": "名稱",
+                    "profit": st.column_config.NumberColumn("獲利金額", format="NT$ %d"),
+                    "pct": st.column_config.NumberColumn("百分比", format="%.2f%%")
+                },
+                hide_index=True,
+                use_container_width=True
+            )
 
 # ==========================================
 # 2. 系統初始化與 API 設定
@@ -312,8 +383,19 @@ st.sidebar.subheader("⚙️ 庫存管理")
 if st.sidebar.button("➕ 新增股票項目", use_container_width=True):
     add_stock_dialog(current_db_file)
 
-if st.sidebar.button("🔍 查看全帳戶明細", use_container_width=True):
+if st.sidebar.button("🔍 查看目前全帳戶明細", use_container_width=True):
     show_full_portfolio_report(active_costs, active_list)
+
+st.sidebar.write("### 📈 績效追蹤")
+col_pnl1, col_pnl2 = st.sidebar.columns(2)
+
+# 按鈕 1：紀錄獲利
+if col_pnl1.button("💰 紀錄賣出", use_container_width=True, help="點擊手動紀錄賣出獲利"):
+    record_sale_dialog(current_db_file)
+
+# 按鈕 2：查看報表 (使用 Icon)
+if col_pnl2.button("📊 查看報表", use_container_width=True, help="開啟年度獲利結算表"):
+    show_annual_report_dialog()
 
 st.sidebar.write("---")
 
@@ -818,6 +900,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
