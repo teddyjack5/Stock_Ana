@@ -246,7 +246,7 @@ def show_annual_report_dialog():
 
 @st.dialog("🧪 投資策略模擬回測", width="large")
 def backtest_dialog(ticker):
-    """支援單筆投入與定期定額的雙模回測工具"""
+    """支援單筆投入與定期定額的雙模回測工具 (修正數據處理 Bug 版)"""
     st.write(f"### 模擬標的：{ticker}")
     
     # 策略參數設定
@@ -260,64 +260,63 @@ def backtest_dialog(ticker):
     st.divider()
     
     with st.spinner("讀取數據並計算中..."):
+        # 抓取資料並確保移除多重索引
         data = yf.download(ticker, start=start_date, progress=False)
         
         if data.empty:
             st.error("無法取得歷史數據。")
             return
+            
+        # --- 核心修正：處理 yfinance 的欄位結構 ---
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+        
+        # 確保 Close 欄位是單一 Series
+        close_prices = data['Close']
 
-        # 核心邏輯計算
         history_data = []
         if mode == "單筆投入":
-            first_price = data['Close'].iloc[0]
+            first_price = float(close_prices.iloc[0])
             total_shares = invest_amt / first_price
             total_invested = invest_amt
             
-            # 建立每日市值變化
-            for date, row in data.iterrows():
-                current_val = total_shares * row['Close']
+            for date, price in close_prices.items():
+                current_val = total_shares * float(price)
                 history_data.append({"日期": date, "累計投入": total_invested, "當前市值": current_val})
         
         else: # 定期定額
-            monthly_data = data.resample('MS').first()
+            # 使用 resample 取得每月初資料
+            monthly_data = close_prices.resample('MS').first()
             total_shares = 0
             total_invested = 0
-            for date, row in monthly_data.iterrows():
-                price = row['Close']
+            for date, price in monthly_data.items():
+                # 修正：確保 price 是單一數值判斷
                 if pd.isna(price): continue
-                shares_bought = invest_amt / price
+                
+                price_val = float(price)
+                shares_bought = invest_amt / price_val
                 total_shares += shares_bought
                 total_invested += invest_amt
-                history_data.append({"日期": date, "累計投入": total_invested, "當前市值": total_shares * price})
+                history_data.append({"日期": date, "累計投入": total_invested, "當前市值": total_shares * price_val})
 
-        # 計算績效指標
+        # --- 後續繪圖與指標計算邏輯維持不變 ---
         df_res = pd.DataFrame(history_data)
         final_value = df_res["當前市值"].iloc[-1]
         total_invested = df_res["累計投入"].iloc[-1]
         profit = final_value - total_invested
         roi = (profit / total_invested) * 100
         
-        # 顯示指標卡
         c1, c2, c3 = st.columns(3)
         c1.metric("總投入成本", f"${total_invested:,.0f}")
         c2.metric("最終市值", f"${final_value:,.0f}", delta=f"{profit:,.0f}")
         c3.metric("總報酬率", f"{roi:.2f}%")
 
-        # 繪製圖表
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df_res["日期"], y=df_res["累計投入"], name="成本線", line=dict(color='gray', dash='dot')))
         fig.add_trace(go.Scatter(x=df_res["日期"], y=df_res["當前市值"], name="價值走勢", fill='tozeroy', line=dict(color='#FF4B4B' if profit > 0 else '#00B050')))
         
-        fig.update_layout(
-            title=f"{ticker} {years}年 {mode} 績效走勢",
-            hovermode="x unified",
-            template="plotly_dark",
-            yaxis_title="金額 (NT$)"
-        )
+        fig.update_layout(title=f"{ticker} {years}年 {mode} 績效走勢", template="plotly_dark")
         st.plotly_chart(fig, use_container_width=True)
-
-        # 專家結論
-        st.success(f"💡 測試結果：在過去 {years} 年中，使用 **{mode}** 策略，你的資產增長了 {roi:.2f}%。")
 
 # ==========================================
 # 2. 系統初始化與 API 設定
@@ -999,4 +998,5 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
