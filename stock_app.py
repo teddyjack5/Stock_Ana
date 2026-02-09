@@ -25,7 +25,7 @@ def load_db(filename):
         "costs": {
             "2356.TW": {"cost": 49.0, "qty": 1.0},
             "0050.TW": {"cost": 70.0, "qty": 1.0}
-        }
+        },
         "realized_pnl": []
     }
     if os.path.exists(filename):
@@ -900,6 +900,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
