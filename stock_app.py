@@ -170,8 +170,8 @@ def record_sale_dialog(db_file):
     manual_name = col_b.text_input("股票名稱", placeholder="例如: 台積電")
     
     col1, col2 = st.columns(2)
-    profit_amt = col1.number_input("獲利金額 (NT$)", step=1000)
-    profit_pct = col2.number_input("獲利百分比 (%)", step=0.1, format="%.2f")
+    profit_amt = col1.number_input("獲利金額", value=0, step=1000)
+    profit_pct = col2.number_input("獲利百分比", value=0.0, step=0.1, format="%.2f")
     
     st.write("---")
     if st.button("確認存入帳本", type="primary", use_container_width=True):
@@ -198,11 +198,11 @@ def record_sale_dialog(db_file):
 
 @st.dialog("🗓️ 年度獲利結算報表", width="large")
 def show_annual_report_dialog():
-    """顯示已實現損益的年度統計報表 (台股配色版)"""
+    """顯示已實現損益的年度統計報表 (強化的紅綠配色版)"""
     pnl_data = st.session_state.db.get("realized_pnl", [])
     
     if not pnl_data:
-        st.info("目前尚無賣出紀錄。請先透過側邊欄「💰 紀錄賣出」功能新增資料。")
+        st.info("目前尚無賣出紀錄。")
         return
 
     df_pnl = pd.DataFrame(pnl_data)
@@ -215,15 +215,15 @@ def show_annual_report_dialog():
         'date': 'count'
     }).rename(columns={'date': '交易筆數', 'profit': '年度總損益'}).sort_index(ascending=False)
 
-    # 定義配色函數：正數紅、負數綠
+    # 核心配色邏輯
     def color_pnl(val):
         if isinstance(val, (int, float)):
-            color = '#FF4B4B' if val > 0 else ('#00B050' if val < 0 else 'white')
-            return f'color: {color}'
-        return ''
+            if val > 0: return 'color: #FF4B4B' # 獲利紅
+            if val < 0: return 'color: #00B050' # 虧損綠
+        return 'color: white'
 
     st.subheader("📊 年度數據摘要")
-    # 套用樣式到「年度總損益」欄位
+    # 這裡會自動處理負號顯示 (例如 NT$ -5,000)
     st.table(summary.style.format({"年度總損益": "NT$ {:,.0f}"}).applymap(color_pnl, subset=['年度總損益']))
 
     st.divider()
@@ -232,21 +232,17 @@ def show_annual_report_dialog():
     
     for y in years:
         with st.expander(f"📅 {y} 年詳細清單"):
-            year_df = df_pnl[df_pnl['年份'] == y].sort_values('date', ascending=False)
+            year_df = df_pnl[df_pnl['年份'] == y].sort_values('date', ascending=False).copy()
             
-            # 使用 dataframe 搭配 style 套用顏色
+            # 建立樣式物件
             styled_df = year_df[['date', 'ticker', 'name', 'profit', 'pct']].style.applymap(
-                color_pnl, subset=['profit', 'pct']
+                color_pnl, subset=['profit', 'pct'] # 同時對金額與百分比著色
             ).format({
                 'profit': 'NT$ {:,.0f}',
-                'pct': '{:.2f}%'
+                'pct': '{:+.2f}%' # 使用 {:+} 會自動在正數前加 +，負數前加 -
             })
             
-            st.dataframe(
-                styled_df,
-                hide_index=True, 
-                use_container_width=True
-            )
+            st.dataframe(styled_df, hide_index=True, use_container_width=True)
 # ==========================================
 # 2. 系統初始化與 API 設定
 # ==========================================
@@ -919,6 +915,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
