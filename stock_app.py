@@ -214,7 +214,7 @@ st.markdown(f"""
 # 5. 側邊欄：庫存管理與選取
 # ==========================================
 st.sidebar.subheader("⚙️ 庫存管理")
-if st.sidebar.button("➕ 新增股票項目", use_container_width=True):
+if st.sidebar.button("➕ 新增股票", use_container_width=True):
     add_stock_dialog(current_db_file)
 
 if st.sidebar.button("🔍 查看全帳戶明細", use_container_width=True):
@@ -699,3 +699,4 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
