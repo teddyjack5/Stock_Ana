@@ -31,8 +31,10 @@ def load_db(filename):
         try:
             with open(filename, "r", encoding="utf-8") as f:
                 content = json.load(f)
+                # 自動轉換舊格式
                 if "groups" in content:
                     first_group_name = list(content["groups"].keys())[0]
+                    st.toast(f"🔄 偵測到舊版格式，已自動轉換帳戶")
                     return {
                         "list": content["groups"][first_group_name].get("list", {}),
                         "costs": content["groups"][first_group_name].get("costs", {}),
@@ -41,10 +43,13 @@ def load_db(filename):
                 content.setdefault("list", {})
                 content.setdefault("costs", {})
                 return content
-        except: return default_data
+        except Exception as e:
+            st.error(f"讀取 JSON 出錯: {e}")
+            return default_data
     return default_data
 
 def save_db(data, filename):
+    """儲存資料至 JSON 檔案"""
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
@@ -53,9 +58,11 @@ def save_db(data, filename):
 # ==========================================
 @st.dialog("📋 全帳戶個股損益明細", width="large")
 def show_full_portfolio_report(active_costs, active_list):
+    """顯示完整的投資組合損益清單"""
     if not active_costs:
         st.warning("目前庫存中沒有帳務資料。")
         return
+
     report_data = []
     with st.spinner("正在獲取最新報價..."):
         for t_code, info in active_costs.items():
@@ -63,14 +70,17 @@ def show_full_portfolio_report(active_costs, active_list):
                 tick = yf.Ticker(t_code)
                 df_recent = tick.history(period="1d")
                 if df_recent.empty: continue
+                
                 c_price = df_recent['Close'].iloc[-1]
                 name = active_list.get(t_code, "未知")
                 cost = info['cost']
                 qty = info['qty']
+                
                 total_cost = cost * qty * 1000
                 market_value = c_price * qty * 1000
                 diff = market_value - total_cost
                 roi = (diff / total_cost * 100) if total_cost > 0 else 0
+                
                 report_data.append({
                     "代號": t_code, "名稱": name, "成本價": f"{cost:.2f}",
                     "現價": f"{c_price:.2f}", "張數": qty,
@@ -78,99 +88,189 @@ def show_full_portfolio_report(active_costs, active_list):
                     "損益": int(diff), "報酬率": f"{roi:.2f}%"
                 })
             except: continue
+
     if report_data:
-        st.dataframe(pd.DataFrame(report_data), use_container_width=True, hide_index=True)
+        df_report = pd.DataFrame(report_data)
+        st.dataframe(
+            df_report.style.applymap(lambda v: f'color: {"red" if v > 0 else "green" if v < 0 else "white"}', subset=['損益']),
+            use_container_width=True, hide_index=True
+        )
+        total_p = sum(d['損益'] for d in report_data)
+        st.divider()
+        st.metric("合計預估總損益", f"NT$ {total_p:,}", delta=f"{total_p:,}")
+
+@st.dialog("➕ 新增股票至清單")
+def add_stock_dialog(db_file):
+    """新增股票代號與名稱"""
+    col1, col2 = st.columns(2)
+    new_id = col1.text_input("股票代號", placeholder="2330.TW").upper()
+    new_name = col2.text_input("股票名稱", placeholder="台積電")
+    
+    st.write("---")
+    c1, c2 = st.columns(2)
+    if c1.button("取消", use_container_width=True): st.rerun()
+    if c2.button("確認加入", type="primary", use_container_width=True):
+        if new_id and new_name:
+            st.session_state.db["list"][new_id] = new_name
+            save_db(st.session_state.db, db_file)
+            st.balloons()
+            st.toast(f"✅ 已成功加入 {new_name}", icon="💰")
+            st.rerun()
+        else:
+            st.error("請完整填寫代號與名稱")
+
+@st.dialog("⚠️ 刪除確認")
+def delete_confirm_dialog(ticker, name, db_file):
+    """二次確認刪除動作"""
+    st.warning(f"確定要從庫存中刪除 **{name} ({ticker})** 嗎？此動作無法復原。")
+    c1, c2 = st.columns(2)
+    if c1.button("取消", use_container_width=True): st.rerun()
+    if c2.button("確認刪除", type="primary", use_container_width=True):
+        st.session_state.db["list"].pop(ticker, None)
+        st.session_state.db["costs"].pop(ticker, None)
+        save_db(st.session_state.db, db_file)
+        st.toast(f"🗑️ 已成功刪除 {name}", icon="🔥")
+        st.rerun()
 
 @st.dialog("🚀 全台股法人強勢掃描器", width="large")
 def professional_scan_dialog():
     st.write("### 🎯 專業經理人佈局清單")
     st.info("策略邏輯：投信單日買超前 20 名 + 股價站穩月線 (MA20)")
+    
     try:
+        # 取得最新交易日 (自動避開假日)
         check_date = datetime.now()
-        if check_date.hour < 15: check_date -= timedelta(days=1)
+        # 若在 14:30 前，則看前一天的資料
+        if check_date.hour < 15:
+            check_date -= timedelta(days=1)
+        
         target_date = check_date.strftime('%Y-%m-%d')
-        df_inst = dl.taiwan_stock_institutional_investors_ranking(data_id="all", start_date=target_date)
+        st.caption(f"📅 分析基準日：{target_date}")
+
+        with st.spinner("正在向市場索取數據..."):
+            # 抓取投信買賣超排行
+            df_inst = dl.taiwan_stock_institutional_investors_ranking(
+                data_id="all",
+                start_date=target_date
+            )
+        
         if df_inst.empty:
-            st.warning("目前時段無法取得數據，請於 15:00 後再試。")
+            st.warning("目前時段無法取得排行數據，請於收盤後 15:00 再試。")
             return
+
+        # 篩選投信 (Investment_Trust) 買超排行
         it_top = df_inst[df_inst['name'] == 'Investment_Trust'].nlargest(20, 'buy')
+        
         results = []
         p_bar = st.progress(0)
+        
         for i, (idx, row) in enumerate(it_top.iterrows()):
             stock_id = f"{row['stock_id']}.TW"
             try:
+                # 快速驗證技術面：只下載 1 個月的數據
                 df_p = yf.download(stock_id, period="20d", progress=False)
                 if len(df_p) < 20: continue
+                
                 c_price = df_p['Close'].iloc[-1]
                 ma20 = df_p['Close'].rolling(20).mean().iloc[-1]
+                
+                # 核心篩選：股價必須在月線之上 (經理人強勢股邏輯)
                 if c_price > ma20:
-                    results.append({"代號": stock_id, "名稱": row.get('stock_name',''), "買超(張)": int(row['buy']/1000), "現價": round(float(c_price),2)})
+                    results.append({
+                        "代號": stock_id,
+                        "名稱": row.get('stock_name', '未知'),
+                        "投信買超(張)": int(row['buy'] / 1000),
+                        "目前股價": f"{float(c_price):.2f}",
+                        "技術面": "✅ 站穩月線",
+                        "推薦指數": "⭐⭐⭐⭐" if c_price > ma20 * 1.05 else "⭐⭐⭐⭐⭐"
+                    })
             except: continue
-            p_bar.progress((i+1)/len(it_top))
-        if results: st.table(pd.DataFrame(results))
-    except Exception as e: st.error(f"錯誤: {e}")
+            p_bar.progress((i + 1) / len(it_top))
 
-@st.dialog("➕ 新增股票")
-def add_stock_dialog(db_file):
-    new_id = st.text_input("股票代號 (例: 2330.TW)").upper()
-    new_name = st.text_input("股票名稱")
-    if st.button("確認加入", type="primary"):
-        if new_id and new_name:
-            st.session_state.db["list"][new_id] = new_name
-            save_db(st.session_state.db, db_file)
-            st.rerun()
+        if results:
+            st.success(f"掃描完畢！共有 {len(results)} 檔標的符合經理人選股標準。")
+            st.table(pd.DataFrame(results))
+            st.caption("💡 註：五顆星代表股價剛突破月線不久，風險回報比較佳。")
+        else:
+            st.warning("今日法人買盤分散，未發現明顯強勢標的。")
+            
+    except Exception as e:
+        st.error(f"掃描過程發生錯誤: {e}")
+
+    if st.button("關閉", use_container_width=True):
+        st.rerun()
 
 # ==========================================
-# 2. 初始化與側邊欄設定
+# 2. 系統初始化與 API 設定
 # ==========================================
 st.set_page_config(page_title="小鐵的股票分析報告", layout="wide")
+st.title("📈 小鐵的股票分析報告")
+
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMS0yOCAwODoyNToyNyIsInVzZXJfaWQiOiJ0ZWRkeWphY2siLCJlbWFpbCI6InRlZGR5amFjazVAeWFob28uY29tLnR3IiwiaXAiOiI0Mi43Mi4yMTEuMTUzIn0.Su4W8X5E9XPN9PZdA03Z6XO6i630kOSvOjcrLowcO-I"
 dl = DataLoader()
 try: dl.set_token(token=FINMIND_TOKEN)
 except: pass
 
-# --- 關鍵修正：解決庫存消失的初始化 ---
+if 'db' not in st.session_state:
+    st.session_state.db = {"password_hash": None, "list": {}, "costs": {}}
+    st.session_state.current_file = None
+
+# ==========================================
+# 3. 側邊欄：帳戶管理與安全性
+# ==========================================
+st.sidebar.title("📁 帳戶與庫存")
+
+# 帳戶檔案切換
 db_files = [f for f in os.listdir('.') if f.endswith('.json') and f != "package.json"]
 if not db_files: db_files = ["my_stock_db.json"]
+current_db_file = st.sidebar.selectbox("📂 切換帳戶庫存", db_files)
 
-if 'current_file' not in st.session_state:
-    st.session_state.current_file = db_files[0]
-    st.session_state.db = load_db(st.session_state.current_file)
-
-st.sidebar.title("📁 帳戶與庫存")
-current_db_file = st.sidebar.selectbox("📂 切換帳戶庫存", db_files, index=db_files.index(st.session_state.current_file) if st.session_state.current_file in db_files else 0)
-
+# 檔案切換偵測
 if st.session_state.current_file != current_db_file:
     st.session_state.db = load_db(current_db_file)
     st.session_state.current_file = current_db_file
-    st.rerun()
 
-# 密碼驗證 (省略部分細節，保持邏輯)...
-is_authenticated = True # 簡化邏輯供演示，實際請保留密碼檢查代碼
+# 新增帳戶
+new_db_name = st.sidebar.text_input("➕ 建立新帳戶名稱", placeholder="例如: 退休基金")
+if st.sidebar.button("建立新帳戶"):
+    if new_db_name:
+        full_name = f"{new_db_name}.json" if not new_db_name.endswith('.json') else new_db_name
+        save_db({"list": {}, "costs": {}}, full_name)
+        st.rerun()
 
-if not is_authenticated: st.stop()
+# 刪除帳戶 (危險區域)
+with st.sidebar.expander("🗑️ 危險區域 (刪除帳戶)"):
+    st.warning(f"確定要刪除【{current_db_file}】？")
+    if st.checkbox("我確定要永久刪除", key="confirm_del_db"):
+        if st.button("💥 執行刪除", type="primary"):
+            if len(db_files) > 1:
+                os.remove(current_db_file)
+                st.session_state.current_file = None
+                st.rerun()
+            else: st.error("至少需保留一個帳戶")
 
-# ==========================================
-# 3. 庫存管理與掃描器按鈕
-# ==========================================
 st.sidebar.divider()
-st.sidebar.subheader("🚀 智能選股雷達")
-if st.sidebar.button("🔥 查看法人強勢清單", use_container_width=True, type="primary"):
-    professional_scan_dialog()
 
-st.sidebar.divider()
-if st.sidebar.button("➕ 新增股票項目", use_container_width=True):
-    add_stock_dialog(current_db_file)
+# 密碼驗證邏輯
+is_authenticated = False
+if st.session_state.db.get("password_hash") is None:
+    st.sidebar.info("🔓 此帳戶尚未設置密碼")
+    if st.sidebar.checkbox("🔒 設置 4 位數密碼"):
+        new_pwd = st.sidebar.text_input("輸入新密碼", type="password", max_chars=4)
+        if st.sidebar.button("確認設置"):
+            st.session_state.db["password_hash"] = hash_password(new_pwd)
+            save_db(st.session_state.db, current_db_file)
+            st.rerun()
+    is_authenticated = True
+else:
+    input_pwd = st.sidebar.text_input("🔑 輸入 4 位數密碼", type="password", max_chars=4)
+    if input_pwd and hash_password(input_pwd) == st.session_state.db["password_hash"]:
+        is_authenticated = True
+    elif input_pwd: st.sidebar.error("❌ 密碼錯誤")
 
-selected_ticker = st.sidebar.selectbox("選取庫存個股", list(st.session_state.db["list"].keys()), format_func=lambda x: f"{x} {st.session_state.db['list'][x]}")
-
-# 備份功能
-st.sidebar.download_button(
-    label="📥 備份庫存檔案 (JSON)",
-    data=json.dumps(st.session_state.db, ensure_ascii=False, indent=4),
-    file_name=current_db_file,
-    mime="application/json"
-)
+if not is_authenticated:
+    st.warning("🔒 請輸入密碼以開啟報告")
+    st.stop()
 
 # ==========================================
 # 4. 主介面：資產總覽卡片
@@ -214,7 +314,7 @@ st.markdown(f"""
 # 5. 側邊欄：庫存管理與選取
 # ==========================================
 st.sidebar.subheader("⚙️ 庫存管理")
-if st.sidebar.button("➕ 新增股票", use_container_width=True):
+if st.sidebar.button("➕ 新增股票項目", use_container_width=True):
     add_stock_dialog(current_db_file)
 
 if st.sidebar.button("🔍 查看全帳戶明細", use_container_width=True):
@@ -255,6 +355,23 @@ if st.sidebar.button("💾 儲存帳務修改"):
     save_db(st.session_state.db, current_db_file)
     st.sidebar.success("帳務已更新")
     st.rerun()
+
+#智能選股區
+st.sidebar.divider()
+st.sidebar.subheader("🚀 智能雷達")
+
+# 判斷收盤狀態
+now = datetime.now()
+is_after_market = now.hour >= 15 # 下午三點後法人數據較完整
+
+button_label = "🔥 查看今日強勢清單" if is_after_market else "⏳ 預覽昨日強勢清單"
+if st.sidebar.button(button_label, use_container_width=True, type="primary"):
+    professional_scan_dialog()
+
+if is_after_market:
+    st.sidebar.caption("✅ 今日收盤數據已就緒")
+else:
+    st.sidebar.caption("💡 下午 3:00 後將更新今日數據")
 
 show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
 
