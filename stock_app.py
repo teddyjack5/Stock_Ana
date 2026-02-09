@@ -487,6 +487,9 @@ if col_pnl1.button("💰 紀錄賣出", use_container_width=True, help="點擊�
 if col_pnl2.button("📊 查看報表", use_container_width=True, help="開啟年度獲利結算表"):
     show_annual_report_dialog()
 
+if st.sidebar.button("🧪 執行定期定額回測", use_container_width=True, help="模擬過去幾年定期定額這檔股票的勝率"):
+    backtest_dialog(ticker_input)
+
 st.sidebar.write("---")
 
 # 1. 取得清單
@@ -990,6 +993,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
