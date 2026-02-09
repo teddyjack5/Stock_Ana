@@ -199,7 +199,7 @@ with open(current_db_file, "r", encoding="utf-8") as f:
         help="下載當前庫存 JSON 檔"
     )
 # 2. 上傳按鈕 (使用 Popover 隱藏大視窗)
-with col_backup2.popover("📤 匯入檔案", use_container_width=True):
+with col_backup2.popover("📤 匯入", use_container_width=True):
     st.write("### 📂 上傳庫存備份")
     uploaded_file = st.file_uploader("請選擇 .json 檔案", type=["json"])
     
@@ -818,6 +818,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
