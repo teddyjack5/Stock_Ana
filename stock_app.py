@@ -135,60 +135,72 @@ def delete_confirm_dialog(ticker, name, db_file):
 @st.dialog("🚀 全台股法人強勢掃描器", width="large")
 def professional_scan_dialog():
     st.write("### 🎯 專業經理人佈局清單")
-    st.info("策略邏輯：投信單日買超張數排行 + 股價站穩月線 (MA20)")
     
-    # --- 關鍵修正：在函數內初始化 DataLoader ---
-    # 這樣可以確保掃描時 API 物件是活著的
+    # 1. 初始化 API
     local_dl = DataLoader()
     try:
-        local_dl.set_token(token=FINMIND_TOKEN) # 使用外層定義的 TOKEN
+        local_dl.set_token(token=FINMIND_TOKEN)
     except:
         pass
 
     try:
+        # 2. 日期判定邏輯
         check_date = datetime.now()
-        # 下午 3 點後才有當日資料，否則抓前一天
         if check_date.hour < 15:
             check_date -= timedelta(days=1)
         
-        # 避開週六與週日
-        if check_date.weekday() == 5: # 週六
+        while check_date.weekday() >= 5: # 遇到週六日自動往前找週五
             check_date -= timedelta(days=1)
-        elif check_date.weekday() == 6: # 週日
-            check_date -= timedelta(days=2)
             
         target_date = check_date.strftime('%Y-%m-%d')
         st.caption(f"📅 分析基準日：{target_date}")
 
-        with st.spinner("正在掃描法人動向..."):
-            # 使用 local_dl 進行抓取
-            raw_data = local_dl.taiwan_stock_institutional_investors(
+        with st.spinner("正在解析法人大數據..."):
+            # 3. 抓取資料
+            raw_res = local_dl.taiwan_stock_institutional_investors(
                 start_date=target_date,
                 end_date=target_date
             )
             
-            # 處理 FinMind 回傳格式 (有些版本回傳 dict, 有些回傳 DataFrame)
-            if isinstance(raw_data, dict):
-                if 'data' in raw_data:
-                    df_inst = pd.DataFrame(raw_data['data'])
-                else:
-                    # 如果 dict 裡沒 'data'，試著直接轉
-                    df_inst = pd.DataFrame(raw_data)
+            # --- 強力解析邏輯 ---
+            if isinstance(raw_res, pd.DataFrame):
+                df_inst = raw_res
+            elif isinstance(raw_res, dict) and 'data' in raw_res:
+                df_inst = pd.DataFrame(raw_res['data'])
             else:
-                df_inst = raw_data
-        
-        if df_inst is None or df_inst.empty:
-            st.warning("⚠️ 沒找到法人資料。可能原因：交易所尚未公佈，或今日非交易日。")
+                # 如果還是不行，把原始資料印出來 debug (這行很重要)
+                st.error("❌ API 回傳格式不符合預期")
+                st.write("原始回傳內容：", raw_res)
+                return
+
+        if df_inst.empty:
+            st.warning(f"⚠️ {target_date} 沒找到法人資料。")
             return
 
-        # 篩選投信 (Investment_Trust)
+        # 4. 欄位容錯處理 (FinMind 有時回傳 name 有時回傳 institutional_investor)
+        # 我們將欄位統一標準化
+        df_inst.columns = [c.lower() for c in df_inst.columns]
+        
+        # 尋找「投信」欄位
+        # 在某些版本中欄位叫 'name', 某些叫 'institutional_investor'
+        name_col = 'name' if 'name' in df_inst.columns else None
+        if not name_col:
+            for c in df_inst.columns:
+                if 'investor' in c: name_col = c
+        
+        if not name_col:
+            st.error(f"找不到法人名稱欄位。現有欄位：{list(df_inst.columns)}")
+            return
+
+        # 5. 篩選投信並計算
         it_buys = df_inst[
-            (df_inst['name'] == 'Investment_Trust') & 
+            (df_inst[name_col].str.contains('Investment_Trust', na=False) | 
+             df_inst[name_col].str.contains('投信', na=False)) & 
             (df_inst['buy'] > 0)
         ].copy()
         
         if it_buys.empty:
-            st.warning("今日投信似乎沒有明顯的買超標的。")
+            st.warning("今日投信沒有明顯買超標的。")
             return
 
         it_buys['buy_sheets'] = it_buys['buy'] // 1000
@@ -200,35 +212,34 @@ def professional_scan_dialog():
         for i, (idx, row) in enumerate(it_top.iterrows()):
             stock_id = str(row['stock_id'])
             full_ticker = f"{stock_id}.TW" if ".TW" not in stock_id else stock_id
-                
             try:
-                # 這裡不變，維持 yfinance 驗證
                 df_p = yf.download(full_ticker, period="20d", progress=False)
-                if len(df_p) < 15: continue
-                
+                if len(df_p) < 10: continue
                 c_price = float(df_p['Close'].iloc[-1])
                 ma20 = float(df_p['Close'].rolling(20).mean().iloc[-1])
-                
                 if c_price > ma20:
                     results.append({
                         "代號": full_ticker,
-                        "買超(張)": int(row['buy_sheets']),
+                        "投信買超(張)": int(row['buy_sheets']),
                         "目前價格": f"{c_price:.2f}",
-                        "技術狀態": "✅ 月線上強勢"
+                        "技術面": "✅ 月線上強勢"
                     })
             except: continue
             p_bar.progress((i + 1) / len(it_top))
 
         if results:
-            st.success(f"掃描完畢！共 {len(results)} 檔。")
+            st.success(f"掃描成功！")
             st.table(pd.DataFrame(results))
         else:
-            st.info("今日投信買超股目前技術面較弱，建議觀望。")
+            st.info("符合法人買超且站上月線的標的較少。")
             
     except Exception as e:
-        st.error(f"掃描過程發生錯誤: {e}")
+        st.error(f"⚠️ 發生錯誤：{str(e)}")
+        # 這裡會印出到底是哪個 key 找不到
+        import traceback
+        st.code(traceback.format_exc())
 
-    if st.button("關閉視窗", use_container_width=True, key="btn_close_pro_scan_v3"):
+    if st.button("關閉視窗", use_container_width=True, key="btn_close_scanner_final"):
         st.rerun()
 
 # ==========================================
@@ -847,6 +858,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
