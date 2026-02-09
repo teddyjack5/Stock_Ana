@@ -184,7 +184,6 @@ if 'db' not in st.session_state:
 st.sidebar.title("📁 帳戶與庫存")
 st.sidebar.subheader("📤 匯入庫存檔案")
 uploaded_file = st.sidebar.file_uploader("選擇 JSON 檔案", type=["json"], help="請上傳由本系統產生的 .json 備份檔")
-
 if uploaded_file is not None:
     # 建立一個「儲存上傳檔案」的按鈕，避免檔案一選取就重複執行
     if st.sidebar.button("確認匯入檔案", use_container_width=True):
@@ -818,6 +817,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
