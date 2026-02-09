@@ -137,17 +137,17 @@ def professional_scan_dialog():
     st.write("### 🎯 專業經理人佈局清單")
     
     try:
-        # 1. 計算正確的交易日期
+        # 1. 處理日期 (維持不變)
         check_date = datetime.now()
         if check_date.hour < 15:
             check_date -= timedelta(days=1)
-        while check_date.weekday() >= 5: # 避開週末
+        while check_date.weekday() >= 5:
             check_date -= timedelta(days=1)
         target_date = check_date.strftime('%Y-%m-%d')
         st.caption(f"📅 分析基準日：{target_date}")
 
-        with st.spinner("正在直接聯繫 API 獲取法人數據..."):
-            # 2. 繞過套件，直接使用 Requests 發送 API 請求
+        with st.spinner("正在安全聯繫數據伺服器..."):
+            # 2. 加入 Headers 偽裝與更嚴謹的請求
             url = "https://api.finmindtrade.com/api/v4/data"
             params = {
                 "dataset": "TaiwanStockInstitutionalInvestors",
@@ -156,26 +156,30 @@ def professional_scan_dialog():
                 "token": FINMIND_TOKEN
             }
             
-            res = requests.get(url, params=params)
+            # --- 核心修正點：模擬瀏覽器身份 ---
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            res = requests.get(url, params=params, headers=headers, timeout=10)
             data_json = res.json()
 
-            # 3. 檢查 API 回傳狀態
+            # 3. 診斷回傳內容
             if data_json.get("status") != 200:
-                st.error(f"❌ API 請求失敗：{data_json.get('msg', '未知錯誤')}")
-                if data_json.get("status") == 403:
-                    st.warning("提示：這通常是 Token 錯誤或流量已達上限。")
+                # 這裡增加一個詳細診斷，告訴你到底是什麼壞了
+                error_msg = data_json.get("msg", "未知伺服器錯誤")
+                st.error(f"❌ API 拒絕存取：{error_msg}")
+                st.info("💡 建議檢查：1. Token 是否過期 2. 今日是否為國定假日 3. 網路連線是否正常")
                 return
 
-            # 4. 安全地轉換為 DataFrame
             raw_list = data_json.get("data", [])
             if not raw_list:
-                st.warning(f"⚠️ {target_date} 尚無法人資料 (通常 15:00 後更新)。")
+                st.warning(f"⚠️ {target_date} 數據尚未準備就緒，建議下午 15:30 後重試。")
                 return
                 
             df_inst = pd.DataFrame(raw_list)
 
-        # 5. 篩選投信並計算
-        # 統一處理欄位大小寫與篩選名稱
+        # 4. 資料過濾邏輯 (維持不變)
         it_buys = df_inst[
             (df_inst['name'].str.contains('Investment_Trust', na=False) | 
              df_inst['name'].str.contains('投信', na=False)) & 
@@ -183,46 +187,38 @@ def professional_scan_dialog():
         ].copy()
         
         if it_buys.empty:
-            st.warning("今日投信沒有明顯買超標的。")
+            st.warning("📊 今日投信買超力道較弱，無顯著標的。")
             return
 
         it_buys['buy_sheets'] = it_buys['buy'] // 1000
-        it_top = it_buys.nlargest(12, 'buy_sheets') # 取前 12 名確保速度
+        it_top = it_buys.nlargest(10, 'buy_sheets') # 取前 10 名更快速
         
+        # 5. yfinance 驗證... (後面程式碼同上個版本)
         results = []
         p_bar = st.progress(0)
-        
         for i, (idx, row) in enumerate(it_top.iterrows()):
             stock_id = str(row['stock_id'])
             full_ticker = f"{stock_id}.TW" if ".TW" not in stock_id else stock_id
             try:
-                # 驗證技術面
                 df_p = yf.download(full_ticker, period="20d", progress=False)
                 if len(df_p) < 10: continue
                 c_price = float(df_p['Close'].iloc[-1])
                 ma20 = float(df_p['Close'].rolling(20).mean().iloc[-1])
-                
                 if c_price > ma20:
-                    results.append({
-                        "代號": full_ticker,
-                        "投信買超(張)": int(row['buy_sheets']),
-                        "目前價格": f"{c_price:.2f}",
-                        "技術面": "✅ 站穩月線"
-                    })
+                    results.append({"代號": full_ticker, "買超(張)": int(row['buy_sheets']), "現價": f"{c_price:.2f}", "狀態": "🔥 強勢"})
             except: continue
             p_bar.progress((i + 1) / len(it_top))
 
         if results:
-            st.success(f"掃描成功！找出 {len(results)} 檔優質標的。")
+            st.success("✅ 掃描完成")
             st.table(pd.DataFrame(results))
-        else:
-            st.info("符合法人買超且站上月線的標的較少，建議觀望。")
             
     except Exception as e:
-        st.error(f"⚠️ 程式執行異常：{str(e)}")
+        st.error(f"⚠️ 系統發生例外：{str(e)}")
 
-    if st.button("關閉視窗", use_container_width=True, key="btn_close_final_v4"):
+    if st.button("關閉", key="close_v5"):
         st.rerun()
+        
 # ==========================================
 # 2. 系統初始化與 API 設定
 # ==========================================
@@ -839,6 +835,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
