@@ -321,15 +321,33 @@ ticker_input = custom_search if custom_search else selected_ticker
 period = st.sidebar.selectbox("分析時間範圍", ["5d", "1mo", "6mo", "1y", "2y"], index=2)
 
 # 帳務設定
-st.sidebar.subheader(f"💰 {ticker_input} 帳務管理")
-if "buy_cost" not in st.session_state: sync_stock_data()
-u_cost = st.sidebar.number_input("買入單價", key="buy_cost", step=0.1)
-u_qty = st.sidebar.number_input("持有張數", key="buy_qty", step=1.0)
+current_costs = st.session_state.db["costs"].get(selected_ticker, {"cost": 0.0, "qty": 0.0})
 
-if st.sidebar.button("💾 儲存帳務修改"):
-    st.session_state.db["costs"][ticker_input] = {"cost": u_cost, "qty": u_qty}
+st.sidebar.subheader(f"💰 帳務管理: {st.session_state.db['list'].get(selected_ticker)}")
+
+# 關鍵修正：使用 value 參數直接綁定資料庫數值
+new_cost = st.sidebar.number_input(
+    "買入成本", 
+    value=float(current_costs["cost"]), 
+    step=0.01, 
+    key=f"cost_{selected_ticker}" # 👈 加入動態 Key 確保切換股票時會重新渲染
+)
+
+new_qty = st.sidebar.number_input(
+    "持有張數", 
+    value=float(current_costs["qty"]), 
+    step=1.0, 
+    key=f"qty_{selected_ticker}" # 👈 加入動態 Key 確保切換股票時會重新渲染
+)
+
+# 儲存按鈕
+if st.sidebar.button("💾 儲存帳務修改", use_container_width=True):
+    st.session_state.db["costs"][selected_ticker] = {
+        "cost": new_cost,
+        "qty": new_qty
+    }
     save_db(st.session_state.db, current_db_file)
-    st.sidebar.success("帳務已更新")
+    st.sidebar.success(f"已更新 {selected_ticker} 帳務資料")
     st.rerun()
 
 show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
@@ -775,6 +793,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
