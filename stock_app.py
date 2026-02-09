@@ -31,7 +31,6 @@ def load_db(filename):
         try:
             with open(filename, "r", encoding="utf-8") as f:
                 content = json.load(f)
-                # 自動轉換舊格式
                 if "groups" in content:
                     first_group_name = list(content["groups"].keys())[0]
                     st.toast(f"🔄 偵測到舊版格式，已自動轉換帳戶")
@@ -58,7 +57,6 @@ def save_db(data, filename):
 # ==========================================
 @st.dialog("📋 全帳戶個股損益明細", width="large")
 def show_full_portfolio_report(active_costs, active_list):
-    """顯示完整的投資組合損益清單"""
     if not active_costs:
         st.warning("目前庫存中沒有帳務資料。")
         return
@@ -101,72 +99,75 @@ def show_full_portfolio_report(active_costs, active_list):
 
 @st.dialog("➕ 新增股票至清單")
 def add_stock_dialog(db_file):
-    """新增股票代號與名稱（含自動校正與驗證）"""
+    """新增股票代號與名稱（含自動校正、驗證、及自動跳轉邏輯）"""
     col1, col2 = st.columns(2)
-    # 使用者輸入 raw_id
     raw_id = col1.text_input("股票代號", placeholder="例如: 0050 或 2330").strip()
     new_name = col2.text_input("股票名稱", placeholder="台積電")
     
     st.write("---")
     c1, c2 = st.columns(2)
-    
     if c1.button("取消", use_container_width=True): 
         st.rerun()
         
     if c2.button("確認加入", type="primary", use_container_width=True):
         if raw_id and new_name:
-            # --- 邏輯修正：自動補齊 .TW ---
             formatted_id = raw_id.upper()
             if "." not in formatted_id:
                 formatted_id = f"{formatted_id}.TW"
             
             with st.spinner(f"正在驗證代號 {formatted_id}..."):
-                # 測試是否能抓到報價
                 check_ticker = yf.Ticker(formatted_id)
                 try:
-                    # 抓取最近 1 天的資訊來確認代號是否存在
                     info = check_ticker.history(period="1d")
                     if info.empty:
-                        # 如果 .TW 抓不到，嘗試 .TWO (上櫃)
                         alt_id = raw_id.upper() + ".TWO"
                         info_alt = yf.Ticker(alt_id).history(period="1d")
                         if not info_alt.empty:
                             formatted_id = alt_id
                         else:
-                            st.error(f"❌ 找不到股票代號: {raw_id}，請檢查號碼是否正確。")
+                            st.error(f"❌ 找不到股票代號: {raw_id}")
                             return
                 except:
-                    st.error("⚠️ 驗證過程發生網路錯誤，請稍後再試。")
+                    st.error("⚠️ 驗證過程發生網路錯誤")
                     return
-            st.session_state.selected_ticker = formatted_id      
-            # --- 驗證通過，正式寫入 ---
+
+            # --- 核心連動修正：同步設定 Widget 狀態 ---
+            st.session_state.selected_ticker = formatted_id
+            st.session_state.temp_ticker = formatted_id # 👈 強制設定側邊欄 selectbox 的 key
+            
             st.session_state.db["list"][formatted_id] = new_name
             save_db(st.session_state.db, db_file)
             st.balloons()
-            st.toast(f"✅ 已成功加入 {new_name} ({formatted_id})", icon="💰")
+            st.toast(f"✅ 已成功加入 {new_name}", icon="💰")
             st.rerun()
         else:
             st.error("請完整填寫代號與名稱")
 
 @st.dialog("⚠️ 刪除確認")
 def delete_confirm_dialog(ticker, name, db_file):
-    """二次確認刪除動作"""
-    st.warning(f"確定要從庫存中刪除 **{name} ({ticker})** 嗎？此動作無法復原。")
+    st.warning(f"確定要從庫存中刪除 **{name} ({ticker})** 嗎？")
     c1, c2 = st.columns(2)
     if c1.button("取消", use_container_width=True): st.rerun()
     if c2.button("確認刪除", type="primary", use_container_width=True):
         st.session_state.db["list"].pop(ticker, None)
         st.session_state.db["costs"].pop(ticker, None)
         save_db(st.session_state.db, db_file)
-        st.toast(f"🗑️ 已成功刪除 {name}", icon="🔥")
+        # 刪除後重置選取，避免報錯
+        st.session_state.selected_ticker = None
+        st.session_state.temp_ticker = None
         st.rerun()
 
-        
 # ==========================================
 # 2. 系統初始化與 API 設定
 # ==========================================
 st.set_page_config(page_title="小鐵的股票分析報告", layout="wide")
 st.title("📈 小鐵的股票分析報告")
+
+# 初始化 session_state 避免 Key 錯誤
+if 'selected_ticker' not in st.session_state:
+    st.session_state.selected_ticker = None
+if 'temp_ticker' not in st.session_state:
+    st.session_state.temp_ticker = None
 
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMS0yOCAwODoyNToyNyIsInVzZXJfaWQiOiJ0ZWRkeWphY2siLCJlbWFpbCI6InRlZGR5amFjazVAeWFob28uY29tLnR3IiwiaXAiOiI0Mi43Mi4yMTEuMTUzIn0.Su4W8X5E9XPN9PZdA03Z6XO6i630kOSvOjcrLowcO-I"
 dl = DataLoader()
@@ -182,17 +183,14 @@ if 'db' not in st.session_state:
 # ==========================================
 st.sidebar.title("📁 帳戶與庫存")
 
-# 帳戶檔案切換
 db_files = [f for f in os.listdir('.') if f.endswith('.json') and f != "package.json"]
 if not db_files: db_files = ["my_stock_db.json"]
 current_db_file = st.sidebar.selectbox("📂 切換帳戶庫存", db_files)
 
-# 檔案切換偵測
 if st.session_state.current_file != current_db_file:
     st.session_state.db = load_db(current_db_file)
     st.session_state.current_file = current_db_file
 
-# 新增帳戶
 new_db_name = st.sidebar.text_input("➕ 建立新帳戶名稱", placeholder="例如: 退休基金")
 if st.sidebar.button("建立新帳戶"):
     if new_db_name:
@@ -200,7 +198,6 @@ if st.sidebar.button("建立新帳戶"):
         save_db({"list": {}, "costs": {}}, full_name)
         st.rerun()
 
-# 刪除帳戶 (危險區域)
 with st.sidebar.expander("🗑️ 危險區域 (刪除帳戶)"):
     st.warning(f"確定要刪除【{current_db_file}】？")
     if st.checkbox("我確定要永久刪除", key="confirm_del_db"):
@@ -213,7 +210,6 @@ with st.sidebar.expander("🗑️ 危險區域 (刪除帳戶)"):
 
 st.sidebar.divider()
 
-# 密碼驗證邏輯
 is_authenticated = False
 if st.session_state.db.get("password_hash") is None:
     st.sidebar.info("🔓 此帳戶尚未設置密碼")
@@ -276,42 +272,43 @@ st.markdown(f"""
 # 5. 側邊欄：庫存管理與選取
 # ==========================================
 def update_ticker_state():
-    """當選單改變時，立即同步選取的代號，解決渲染延遲問題"""
-    if 'temp_ticker' in st.session_state:
-        st.session_state.selected_ticker = st.session_state.temp_ticker
+    """選單改變時的即時回調"""
+    st.session_state.selected_ticker = st.session_state.temp_ticker
 
 st.sidebar.subheader("⚙️ 庫存管理")
-if st.sidebar.button("➕ 新增股票項目", use_container_width=True, key="btn_add_stock"):
+if st.sidebar.button("➕ 新增股票項目", use_container_width=True):
     add_stock_dialog(current_db_file)
 
-if st.sidebar.button("🔍 查看全帳戶明細", use_container_width=True, key="btn_view_report"):
+if st.sidebar.button("🔍 查看全帳戶明細", use_container_width=True):
     show_full_portfolio_report(active_costs, active_list)
 
 st.sidebar.write("---")
 
-# 1. 取得目前的庫存清單
+# 1. 取得清單
 ticker_options = list(st.session_state.db["list"].keys())
 
-# 2. 決定預設要停在哪一個選項 (Index)
-default_index = 0
+# 2. 核心修正：強制校準 temp_ticker 以免 selectbox 拒絕跳轉
 if 'selected_ticker' in st.session_state and st.session_state.selected_ticker in ticker_options:
+    st.session_state.temp_ticker = st.session_state.selected_ticker
+
+# 找出 index
+default_index = 0
+if st.session_state.selected_ticker in ticker_options:
     default_index = ticker_options.index(st.session_state.selected_ticker)
 
-# 3. 渲染選單 (整合 on_change 機制)
+# 3. 渲染選單
 selected_ticker = st.sidebar.selectbox(
     "選取庫存個股", 
     ticker_options, 
     index=default_index,
-    key="temp_ticker",        # 👈 內部暫存 Key
-    on_change=update_ticker_state, # 👈 切換瞬間執行同步
+    key="temp_ticker",        
+    on_change=update_ticker_state, 
     format_func=lambda x: f"{x} {st.session_state.db['list'].get(x, '')}"
 )
-
-# 確保主變數與選單同步
 st.session_state.selected_ticker = selected_ticker
 
 if selected_ticker:
-    if st.sidebar.button(f"🗑️ 刪除 {selected_ticker}", use_container_width=True, key=f"del_{selected_ticker}"):
+    if st.sidebar.button(f"🗑️ 刪除 {selected_ticker}", use_container_width=True):
         delete_confirm_dialog(selected_ticker, active_list.get(selected_ticker), current_db_file)
 
 st.sidebar.write("---")
@@ -320,31 +317,27 @@ ticker_input = custom_search if custom_search else selected_ticker
 period = st.sidebar.selectbox("分析時間範圍", ["5d", "1mo", "6mo", "1y", "2y"], index=2)
 
 # --- 帳務管理連動區 ---
-# 這裡使用 value 指向目前的 session_state，並搭配動態 Key 確保切換即跳轉
 current_costs = st.session_state.db["costs"].get(selected_ticker, {"cost": 0.0, "qty": 0.0})
 
 st.sidebar.subheader(f"💰 帳務管理: {st.session_state.db['list'].get(selected_ticker, '未知')}")
 
+# 使用動態 Key 確保切換個股時輸入框會刷新 value
 new_cost = st.sidebar.number_input(
     "買入成本", 
     value=float(current_costs["cost"]), 
     step=0.01, 
-    key=f"cost_input_{selected_ticker}" # 👈 關鍵：動態 Key 讓不同股票有獨立輸入框
+    key=f"cost_input_{selected_ticker}"
 )
 
 new_qty = st.sidebar.number_input(
     "持有張數", 
     value=float(current_costs["qty"]), 
     step=1.0, 
-    key=f"qty_input_{selected_ticker}" # 👈 關鍵：動態 Key
+    key=f"qty_input_{selected_ticker}"
 )
 
-# 儲存按鈕
-if st.sidebar.button("💾 儲存帳務修改", use_container_width=True, key=f"save_{selected_ticker}"):
-    st.session_state.db["costs"][selected_ticker] = {
-        "cost": new_cost,
-        "qty": new_qty
-    }
+if st.sidebar.button("💾 儲存帳務修改", use_container_width=True):
+    st.session_state.db["costs"][selected_ticker] = {"cost": new_cost, "qty": new_qty}
     save_db(st.session_state.db, current_db_file)
     st.sidebar.success(f"已更新 {selected_ticker} 帳務資料")
     st.rerun()
@@ -792,6 +785,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
