@@ -138,7 +138,7 @@ def add_stock_dialog(db_file):
                 except:
                     st.error("⚠️ 驗證過程發生網路錯誤，請稍後再試。")
                     return
-
+            st.session_state.selected_ticker = formatted_id      
             # --- 驗證通過，正式寫入 ---
             st.session_state.db["list"][formatted_id] = new_name
             save_db(st.session_state.db, db_file)
@@ -291,11 +291,25 @@ def sync_stock_data():
     st.session_state.buy_cost = float(acc['cost'])
     st.session_state.buy_qty = float(acc['qty'])
 
+# 1. 取得目前的庫存清單
+ticker_options = list(st.session_state.db["list"].keys())
+
+# 2. 決定預設要停在哪一個選項 (Index)
+# 如果剛新增過股票，session_state 會帶著那個 ID
+default_index = 0
+if 'selected_ticker' in st.session_state and st.session_state.selected_ticker in ticker_options:
+    default_index = ticker_options.index(st.session_state.selected_ticker)
+
+# 3. 渲染選單
 selected_ticker = st.sidebar.selectbox(
-    "選取庫存個股", list(active_list.keys()), 
-    format_func=lambda x: f"{x} {active_list[x]}",
-    key="selected_ticker_key", on_change=sync_stock_data
+    "選取庫存個股", 
+    ticker_options, 
+    index=default_index, # 👈 關鍵就在這裡！
+    format_func=lambda x: f"{x} {st.session_state.db['list'][x]}"
 )
+
+# 4. 同步更新 (確保點選其他股票時也能正常運作)
+st.session_state.selected_ticker = selected_ticker
 
 if selected_ticker:
     if st.sidebar.button(f"🗑️ 刪除 {selected_ticker}", use_container_width=True):
@@ -761,6 +775,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
