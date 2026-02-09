@@ -182,9 +182,12 @@ if 'db' not in st.session_state:
 # 3. 側邊欄：帳戶管理與安全性
 # ==========================================
 st.sidebar.title("📁 帳戶與庫存")
+db_files = [f for f in os.listdir('.') if f.endswith('.json') and f != "package.json"]
+if not db_files: db_files = ["my_stock_db.json"]
+current_db_file = st.sidebar.selectbox("📂 切換帳戶庫存", db_files)
+
 st.sidebar.write("### 🗄️ 帳戶備份")
 col_backup1, col_backup2 = st.sidebar.columns(2)
-
 # 1. 下載按鈕 (Icon 化)
 with open(current_db_file, "r", encoding="utf-8") as f:
     col_backup1.download_button(
@@ -195,7 +198,6 @@ with open(current_db_file, "r", encoding="utf-8") as f:
         use_container_width=True,
         help="下載當前庫存 JSON 檔"
     )
-
 # 2. 上傳按鈕 (使用 Popover 隱藏大視窗)
 with col_backup2.popover("📤 匯入檔案", use_container_width=True):
     st.write("### 📂 上傳庫存備份")
@@ -217,10 +219,6 @@ with col_backup2.popover("📤 匯入檔案", use_container_width=True):
                     st.error("格式錯誤：找不到 list 或 costs 欄位")
             except Exception as e:
                 st.error(f"解析失敗: {e}")
-
-db_files = [f for f in os.listdir('.') if f.endswith('.json') and f != "package.json"]
-if not db_files: db_files = ["my_stock_db.json"]
-current_db_file = st.sidebar.selectbox("📂 切換帳戶庫存", db_files)
 
 if st.session_state.current_file != current_db_file:
     st.session_state.db = load_db(current_db_file)
@@ -820,6 +818,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
