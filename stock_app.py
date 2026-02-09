@@ -161,11 +161,13 @@ def delete_confirm_dialog(ticker, name, db_file):
 
 @st.dialog("💰 紀錄已實現獲利")
 def record_sale_dialog(db_file):
-    """手動紀錄賣出獲利的對話框"""
+    """手動紀錄賣出獲利的對話框 (完全手動輸入版)"""
     date = st.date_input("賣出日期", datetime.now())
-    # 讓使用者從清單選取，也可以手動輸入
-    ticker_list = list(st.session_state.db["list"].keys())
-    selected_t = st.selectbox("選取股票", ticker_list, format_func=lambda x: f"{x} {st.session_state.db['list'].get(x, '')}")
+    
+    # 改為手動輸入代號與名稱
+    col_a, col_b = st.columns(2)
+    manual_id = col_a.text_input("股票代號", placeholder="例如: 2330")
+    manual_name = col_b.text_input("股票名稱", placeholder="例如: 台積電")
     
     col1, col2 = st.columns(2)
     profit_amt = col1.number_input("獲利金額 (NT$)", step=1000)
@@ -173,17 +175,26 @@ def record_sale_dialog(db_file):
     
     st.write("---")
     if st.button("確認存入帳本", type="primary", use_container_width=True):
-        record = {
-            "date": str(date),
-            "ticker": selected_t,
-            "name": st.session_state.db["list"].get(selected_t, "未知"),
-            "profit": profit_amt,
-            "pct": profit_pct
-        }
-        st.session_state.db["realized_pnl"].append(record)
-        save_db(st.session_state.db, db_file)
-        st.success(f"✅ 已紀錄 {record['name']} 的獲利！")
-        st.rerun()
+        if manual_id and manual_name:
+            # 自動處理代號格式 (轉大寫並補上 .TW)
+            formatted_id = manual_id.upper()
+            if "." not in formatted_id:
+                formatted_id = f"{formatted_id}.TW"
+                
+            record = {
+                "date": str(date),
+                "ticker": formatted_id,
+                "name": manual_name,
+                "profit": profit_amt,
+                "pct": profit_pct
+            }
+            # 確保 realized_pnl 存在並存入
+            st.session_state.db.setdefault("realized_pnl", []).append(record)
+            save_db(st.session_state.db, db_file)
+            st.success(f"✅ 已紀錄 {manual_name} 的獲利！")
+            st.rerun()
+        else:
+            st.error("請填寫股票代號與名稱")
 
 @st.dialog("🗓️ 年度獲利結算報表", width="large")
 def show_annual_report_dialog():
@@ -900,6 +911,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
