@@ -137,6 +137,14 @@ def professional_scan_dialog():
     st.write("### 🎯 專業經理人佈局清單")
     st.info("策略邏輯：投信單日買超張數排行 + 股價站穩月線 (MA20)")
     
+    # --- 關鍵修正：在函數內初始化 DataLoader ---
+    # 這樣可以確保掃描時 API 物件是活著的
+    local_dl = DataLoader()
+    try:
+        local_dl.set_token(token=FINMIND_TOKEN) # 使用外層定義的 TOKEN
+    except:
+        pass
+
     try:
         check_date = datetime.now()
         # 下午 3 點後才有當日資料，否則抓前一天
@@ -153,30 +161,27 @@ def professional_scan_dialog():
         st.caption(f"📅 分析基準日：{target_date}")
 
         with st.spinner("正在掃描法人動向..."):
-            # 呼叫 API
-            raw_data = dl.taiwan_stock_institutional_investors(
+            # 使用 local_dl 進行抓取
+            raw_data = local_dl.taiwan_stock_institutional_investors(
                 start_date=target_date,
                 end_date=target_date
             )
             
-            # --- 核心修正：處理 'data' 錯誤 ---
-            # 如果回傳是字典且包含 'data'，則轉為 DataFrame
-            if isinstance(raw_data, dict) and 'data' in raw_data:
-                df_inst = pd.DataFrame(raw_data['data'])
+            # 處理 FinMind 回傳格式 (有些版本回傳 dict, 有些回傳 DataFrame)
+            if isinstance(raw_data, dict):
+                if 'data' in raw_data:
+                    df_inst = pd.DataFrame(raw_data['data'])
+                else:
+                    # 如果 dict 裡沒 'data'，試著直接轉
+                    df_inst = pd.DataFrame(raw_data)
             else:
-                df_inst = pd.DataFrame(raw_data)
+                df_inst = raw_data
         
-        if df_inst.empty:
+        if df_inst is None or df_inst.empty:
             st.warning("⚠️ 沒找到法人資料。可能原因：交易所尚未公佈，或今日非交易日。")
             return
 
-        # 檢查必要欄位是否存在 (相容性檢查)
-        required_cols = ['name', 'buy', 'stock_id']
-        if not all(col in df_inst.columns for col in required_cols):
-            st.error(f"API 回傳格式異常，缺少欄位。目前欄位有：{list(df_inst.columns)}")
-            return
-
-        # 篩選投信 (Investment_Trust) 且有買進的資料
+        # 篩選投信 (Investment_Trust)
         it_buys = df_inst[
             (df_inst['name'] == 'Investment_Trust') & 
             (df_inst['buy'] > 0)
@@ -186,22 +191,18 @@ def professional_scan_dialog():
             st.warning("今日投信似乎沒有明顯的買超標的。")
             return
 
-        # 計算張數並排序
         it_buys['buy_sheets'] = it_buys['buy'] // 1000
-        it_top = it_buys.nlargest(15, 'buy_sheets') # 先取前 15 名加速驗證
+        it_top = it_buys.nlargest(15, 'buy_sheets')
         
         results = []
         p_bar = st.progress(0)
         
         for i, (idx, row) in enumerate(it_top.iterrows()):
             stock_id = str(row['stock_id'])
-            if not stock_id.endswith('.TW'):
-                full_ticker = f"{stock_id}.TW"
-            else:
-                full_ticker = stock_id
+            full_ticker = f"{stock_id}.TW" if ".TW" not in stock_id else stock_id
                 
             try:
-                # 使用 yfinance 驗證股價是否站上月線
+                # 這裡不變，維持 yfinance 驗證
                 df_p = yf.download(full_ticker, period="20d", progress=False)
                 if len(df_p) < 15: continue
                 
@@ -211,16 +212,15 @@ def professional_scan_dialog():
                 if c_price > ma20:
                     results.append({
                         "代號": full_ticker,
-                        "投信買超(張)": int(row['buy_sheets']),
+                        "買超(張)": int(row['buy_sheets']),
                         "目前價格": f"{c_price:.2f}",
-                        "技術狀態": "✅ 月線上強勢",
-                        "推薦度": "⭐⭐⭐⭐⭐" if c_price > ma20 * 1.02 else "⭐⭐⭐⭐"
+                        "技術狀態": "✅ 月線上強勢"
                     })
             except: continue
             p_bar.progress((i + 1) / len(it_top))
 
         if results:
-            st.success(f"掃描完畢！為您找出 {len(results)} 檔經理人認同標的。")
+            st.success(f"掃描完畢！共 {len(results)} 檔。")
             st.table(pd.DataFrame(results))
         else:
             st.info("今日投信買超股目前技術面較弱，建議觀望。")
@@ -847,6 +847,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
