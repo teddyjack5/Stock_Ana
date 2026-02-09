@@ -139,11 +139,11 @@ def professional_scan_dialog():
     
     try:
         check_date = datetime.now()
-        # 下午 3 點後才有當日資料
+        # 下午 3 點後才有當日資料，否則抓前一天
         if check_date.hour < 15:
             check_date -= timedelta(days=1)
         
-        # 避開週六、週日 (抓不到資料的常見原因)
+        # 避開週六與週日
         if check_date.weekday() == 5: # 週六
             check_date -= timedelta(days=1)
         elif check_date.weekday() == 6: # 週日
@@ -152,18 +152,31 @@ def professional_scan_dialog():
         target_date = check_date.strftime('%Y-%m-%d')
         st.caption(f"📅 分析基準日：{target_date}")
 
-        with st.spinner("正在掃描全台股法人動向..."):
-            # --- 修正處：改用最穩定的 API 指令 ---
-            df_inst = dl.taiwan_stock_institutional_investors(
+        with st.spinner("正在掃描法人動向..."):
+            # 呼叫 API
+            raw_data = dl.taiwan_stock_institutional_investors(
                 start_date=target_date,
                 end_date=target_date
             )
+            
+            # --- 核心修正：處理 'data' 錯誤 ---
+            # 如果回傳是字典且包含 'data'，則轉為 DataFrame
+            if isinstance(raw_data, dict) and 'data' in raw_data:
+                df_inst = pd.DataFrame(raw_data['data'])
+            else:
+                df_inst = pd.DataFrame(raw_data)
         
-        if df_inst is None or df_inst.empty:
-            st.warning("⚠️ 沒找到法人資料。可能原因：交易所尚未公佈、或是今日為非交易日。")
+        if df_inst.empty:
+            st.warning("⚠️ 沒找到法人資料。可能原因：交易所尚未公佈，或今日非交易日。")
             return
 
-        # 篩選投信 (Investment_Trust) 且有買超的資料
+        # 檢查必要欄位是否存在 (相容性檢查)
+        required_cols = ['name', 'buy', 'stock_id']
+        if not all(col in df_inst.columns for col in required_cols):
+            st.error(f"API 回傳格式異常，缺少欄位。目前欄位有：{list(df_inst.columns)}")
+            return
+
+        # 篩選投信 (Investment_Trust) 且有買進的資料
         it_buys = df_inst[
             (df_inst['name'] == 'Investment_Trust') & 
             (df_inst['buy'] > 0)
@@ -173,29 +186,33 @@ def professional_scan_dialog():
             st.warning("今日投信似乎沒有明顯的買超標的。")
             return
 
-        # 計算張數並排序取前 20 名
+        # 計算張數並排序
         it_buys['buy_sheets'] = it_buys['buy'] // 1000
-        it_top = it_buys.nlargest(20, 'buy_sheets')
+        it_top = it_buys.nlargest(15, 'buy_sheets') # 先取前 15 名加速驗證
         
         results = []
         p_bar = st.progress(0)
         
         for i, (idx, row) in enumerate(it_top.iterrows()):
-            stock_id = f"{row['stock_id']}.TW"
+            stock_id = str(row['stock_id'])
+            if not stock_id.endswith('.TW'):
+                full_ticker = f"{stock_id}.TW"
+            else:
+                full_ticker = stock_id
+                
             try:
-                # 這裡使用 yfinance 驗證技術面
-                df_p = yf.download(stock_id, period="20d", progress=False)
+                # 使用 yfinance 驗證股價是否站上月線
+                df_p = yf.download(full_ticker, period="20d", progress=False)
                 if len(df_p) < 15: continue
                 
-                c_price = df_p['Close'].iloc[-1]
-                ma20 = df_p['Close'].rolling(20).mean().iloc[-1]
+                c_price = float(df_p['Close'].iloc[-1])
+                ma20 = float(df_p['Close'].rolling(20).mean().iloc[-1])
                 
-                # 核心條件：價格在月線之上
                 if c_price > ma20:
                     results.append({
-                        "代號": stock_id,
+                        "代號": full_ticker,
                         "投信買超(張)": int(row['buy_sheets']),
-                        "目前價格": f"{float(c_price):.2f}",
+                        "目前價格": f"{c_price:.2f}",
                         "技術狀態": "✅ 月線上強勢",
                         "推薦度": "⭐⭐⭐⭐⭐" if c_price > ma20 * 1.02 else "⭐⭐⭐⭐"
                     })
@@ -206,12 +223,12 @@ def professional_scan_dialog():
             st.success(f"掃描完畢！為您找出 {len(results)} 檔經理人認同標的。")
             st.table(pd.DataFrame(results))
         else:
-            st.info("今日投信買超標的目前技術面較弱 (多在月線下)，建議觀察。")
+            st.info("今日投信買超股目前技術面較弱，建議觀望。")
             
     except Exception as e:
         st.error(f"掃描過程發生錯誤: {e}")
 
-    if st.button("關閉視窗", use_container_width=True, key="btn_close_pro_scan"):
+    if st.button("關閉視窗", use_container_width=True, key="btn_close_pro_scan_v3"):
         st.rerun()
 
 # ==========================================
@@ -830,6 +847,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
