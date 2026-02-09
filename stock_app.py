@@ -275,44 +275,43 @@ st.markdown(f"""
 # ==========================================
 # 5. 側邊欄：庫存管理與選取
 # ==========================================
+def update_ticker_state():
+    """當選單改變時，立即同步選取的代號，解決渲染延遲問題"""
+    if 'temp_ticker' in st.session_state:
+        st.session_state.selected_ticker = st.session_state.temp_ticker
+
 st.sidebar.subheader("⚙️ 庫存管理")
-if st.sidebar.button("➕ 新增股票項目", use_container_width=True):
+if st.sidebar.button("➕ 新增股票項目", use_container_width=True, key="btn_add_stock"):
     add_stock_dialog(current_db_file)
 
-if st.sidebar.button("🔍 查看全帳戶明細", use_container_width=True):
+if st.sidebar.button("🔍 查看全帳戶明細", use_container_width=True, key="btn_view_report"):
     show_full_portfolio_report(active_costs, active_list)
 
 st.sidebar.write("---")
-
-# 股票選取與同步
-def sync_stock_data():
-    t_key = st.session_state.get('selected_ticker_key')
-    acc = st.session_state.db["costs"].get(t_key, {"cost": 0.0, "qty": 0.0})
-    st.session_state.buy_cost = float(acc['cost'])
-    st.session_state.buy_qty = float(acc['qty'])
 
 # 1. 取得目前的庫存清單
 ticker_options = list(st.session_state.db["list"].keys())
 
 # 2. 決定預設要停在哪一個選項 (Index)
-# 如果剛新增過股票，session_state 會帶著那個 ID
 default_index = 0
 if 'selected_ticker' in st.session_state and st.session_state.selected_ticker in ticker_options:
     default_index = ticker_options.index(st.session_state.selected_ticker)
 
-# 3. 渲染選單
+# 3. 渲染選單 (整合 on_change 機制)
 selected_ticker = st.sidebar.selectbox(
     "選取庫存個股", 
     ticker_options, 
-    index=default_index, # 👈 關鍵就在這裡！
-    format_func=lambda x: f"{x} {st.session_state.db['list'][x]}"
+    index=default_index,
+    key="temp_ticker",        # 👈 內部暫存 Key
+    on_change=update_ticker_state, # 👈 切換瞬間執行同步
+    format_func=lambda x: f"{x} {st.session_state.db['list'].get(x, '')}"
 )
 
-# 4. 同步更新 (確保點選其他股票時也能正常運作)
+# 確保主變數與選單同步
 st.session_state.selected_ticker = selected_ticker
 
 if selected_ticker:
-    if st.sidebar.button(f"🗑️ 刪除 {selected_ticker}", use_container_width=True):
+    if st.sidebar.button(f"🗑️ 刪除 {selected_ticker}", use_container_width=True, key=f"del_{selected_ticker}"):
         delete_confirm_dialog(selected_ticker, active_list.get(selected_ticker), current_db_file)
 
 st.sidebar.write("---")
@@ -320,28 +319,28 @@ custom_search = st.sidebar.text_input("🔍 全域搜尋 (不加入庫存)", "")
 ticker_input = custom_search if custom_search else selected_ticker
 period = st.sidebar.selectbox("分析時間範圍", ["5d", "1mo", "6mo", "1y", "2y"], index=2)
 
-# 帳務設定
+# --- 帳務管理連動區 ---
+# 這裡使用 value 指向目前的 session_state，並搭配動態 Key 確保切換即跳轉
 current_costs = st.session_state.db["costs"].get(selected_ticker, {"cost": 0.0, "qty": 0.0})
 
-st.sidebar.subheader(f"💰 帳務管理: {st.session_state.db['list'].get(selected_ticker)}")
+st.sidebar.subheader(f"💰 帳務管理: {st.session_state.db['list'].get(selected_ticker, '未知')}")
 
-# 關鍵修正：使用 value 參數直接綁定資料庫數值
 new_cost = st.sidebar.number_input(
     "買入成本", 
     value=float(current_costs["cost"]), 
     step=0.01, 
-    key=f"cost_{selected_ticker}" # 👈 加入動態 Key 確保切換股票時會重新渲染
+    key=f"cost_input_{selected_ticker}" # 👈 關鍵：動態 Key 讓不同股票有獨立輸入框
 )
 
 new_qty = st.sidebar.number_input(
     "持有張數", 
     value=float(current_costs["qty"]), 
     step=1.0, 
-    key=f"qty_{selected_ticker}" # 👈 加入動態 Key 確保切換股票時會重新渲染
+    key=f"qty_input_{selected_ticker}" # 👈 關鍵：動態 Key
 )
 
 # 儲存按鈕
-if st.sidebar.button("💾 儲存帳務修改", use_container_width=True):
+if st.sidebar.button("💾 儲存帳務修改", use_container_width=True, key=f"save_{selected_ticker}"):
     st.session_state.db["costs"][selected_ticker] = {
         "cost": new_cost,
         "qty": new_qty
@@ -793,6 +792,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
