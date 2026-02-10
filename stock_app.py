@@ -661,56 +661,73 @@ if ticker_input:
         except: st.error("籌碼抓取失敗")
 
         # 法人籌碼移動表格 
-        try:
+try:
             if not df_chip.empty:
-                st.write("#### 📊 近期法人買賣明細 (張)")
+                st.write("#### 📈 近期法人買賣趨勢 (張)")
                 
-                # 1. 整理數據：計算每日各法人的淨買賣量
-                df_chip['net'] = (df_chip['buy'] - df_chip['sell']) / 1000  # 換算成張
+                # 1. 整理數據：計算每日淨買賣量
+                df_chip['net'] = (df_chip['buy'] - df_chip['sell']) / 1000
                 
-                # 2. 轉換表格結構 (Pivot)
-                # 將外資、投信、自營商分成不同欄位
-                df_pivot = df_chip.pivot_table(
+                # 2. 轉換結構 (Pivot)
+                df_trend = df_chip.pivot_table(
                     index='date', 
                     columns='name', 
                     values='net', 
                     aggfunc='sum'
                 ).fillna(0)
                 
-                # 3. 欄位名稱優化 (根據你的數據庫標籤進行對應)
+                # 3. 欄位整合與優化
                 name_map = {
                     'Foreign_Investor': '外資',
                     'Investment_Trust': '投信',
                     'Dealer_Self': '自營商(自有)',
                     'Dealer_Hedging': '自營商(避險)'
                 }
-                # 如果有其他標籤，可在此擴充，或用簡單包含判斷
-                df_pivot = df_pivot.rename(columns=lambda x: next((v for k, v in name_map.items() if k in x), x))
+                df_trend = df_trend.rename(columns=lambda x: next((v for k, v in name_map.items() if k in x), x))
                 
-                # 合併所有自營商
-                dealer_cols = [c for c in df_pivot.columns if '自營商' in c]
+                # 合併自營商
+                dealer_cols = [c for c in df_trend.columns if '自營商' in c]
                 if dealer_cols:
-                    df_pivot['自營商合計'] = df_pivot[dealer_cols].sum(axis=1)
+                    df_trend['自營商'] = df_trend[dealer_cols].sum(axis=1)
+
+                # 4. 繪製 Plotly 折線圖
+                fig_chip = go.Figure()
                 
-                # 4. 排序與選取顯示欄位
-                display_df = df_pivot.sort_index(ascending=False) # 最新日期在前
-                final_cols = ['外資', '投信', '自營商合計']
-                # 確保這些欄位都存在
-                final_cols = [c for c in final_cols if c in display_df.columns]
-                display_df = display_df[final_cols]
+                # 外資用橘色, 投信用紫色, 自營商用綠色 (標準法人盤配色)
+                line_configs = {
+                    '外資': '#FF9900', 
+                    '投信': '#CC00FF', 
+                    '自營商': '#00B050'
+                }
 
-                # 5. 定義配色邏輯 (正紅負綠)
-                def color_chip(val):
-                    color = '#FF4B4B' if val > 0 else ('#00B050' if val < 0 else 'white')
-                    return f'color: {color}'
+                for label, color in line_configs.items():
+                    if label in df_trend.columns:
+                        fig_chip.add_trace(go.Scatter(
+                            x=df_trend.index, 
+                            y=df_trend[label],
+                            mode='lines+markers',
+                            name=label,
+                            line=dict(color=color, width=2),
+                            marker=dict(size=6)
+                        ))
 
-                # 6. 呈現表格
-                st.dataframe(
-                    display_df.style.applymap(color_chip).format("{:,.0f}"),
-                    use_container_width=True
+                # 加入 0 軸參考線
+                fig_chip.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
+
+                fig_chip.update_layout(
+                    hovermode="x unified",
+                    height=350,
+                    margin=dict(l=20, r=20, t=30, b=20),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    template="plotly_dark",
+                    xaxis_title="日期",
+                    yaxis_title="買賣超張數"
                 )
+                
+                st.plotly_chart(fig_chip, use_container_width=True)
+                
         except Exception as e:
-            st.error(f"明細表整理失敗: {e}")
+            st.error(f"趨勢圖繪製失敗: {e}")
 
         # 外資持股與月營收圖表
         st.write("---")
@@ -1049,6 +1066,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
