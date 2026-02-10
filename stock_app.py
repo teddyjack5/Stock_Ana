@@ -315,7 +315,7 @@ def backtest_dialog(ticker):
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df_res["日期"], y=df_res["累計投入"], name="成本線", line=dict(color='gray', dash='dot')))
         fig.add_trace(go.Scatter(x=df_res["日期"], y=df_res["當前市值"], name="價值走勢", fill='tozeroy', 
-                                 line=dict(color='#00B050' if total_profit > 0 else '#FF4B4B')))
+                                 line=dict(color='#FF4B4B' if total_profit > 0 else '#00B050')))
         
         fig.update_layout(title=f"{ticker} {years}年績效 (CAGR: {cagr:.1f}% / MDD: {mdd:.1f}%)", template="plotly_dark")
         st.plotly_chart(fig, use_container_width=True)
@@ -1073,6 +1073,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
