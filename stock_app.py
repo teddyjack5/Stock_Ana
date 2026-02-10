@@ -661,7 +661,7 @@ if ticker_input:
         except: st.error("籌碼抓取失敗")
 
         # 法人籌碼移動表格 
-try:
+        try:
             if not df_chip.empty:
                 st.write("#### 📈 近期法人買賣趨勢 (張)")
                 
@@ -1066,6 +1066,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
