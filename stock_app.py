@@ -660,7 +660,60 @@ if ticker_input:
                 st.caption(f"更新日期：{last_day}")
         except: st.error("籌碼抓取失敗")
 
+        # 法人籌碼移動表格 
+        try:
+            if not df_chip.empty:
+                st.write("#### 📊 近期法人買賣明細 (張)")
+                
+                # 1. 整理數據：計算每日各法人的淨買賣量
+                df_chip['net'] = (df_chip['buy'] - df_chip['sell']) / 1000  # 換算成張
+                
+                # 2. 轉換表格結構 (Pivot)
+                # 將外資、投信、自營商分成不同欄位
+                df_pivot = df_chip.pivot_table(
+                    index='date', 
+                    columns='name', 
+                    values='net', 
+                    aggfunc='sum'
+                ).fillna(0)
+                
+                # 3. 欄位名稱優化 (根據你的數據庫標籤進行對應)
+                name_map = {
+                    'Foreign_Investor': '外資',
+                    'Investment_Trust': '投信',
+                    'Dealer_Self': '自營商(自有)',
+                    'Dealer_Hedging': '自營商(避險)'
+                }
+                # 如果有其他標籤，可在此擴充，或用簡單包含判斷
+                df_pivot = df_pivot.rename(columns=lambda x: next((v for k, v in name_map.items() if k in x), x))
+                
+                # 合併所有自營商
+                dealer_cols = [c for c in df_pivot.columns if '自營商' in c]
+                if dealer_cols:
+                    df_pivot['自營商合計'] = df_pivot[dealer_cols].sum(axis=1)
+                
+                # 4. 排序與選取顯示欄位
+                display_df = df_pivot.sort_index(ascending=False) # 最新日期在前
+                final_cols = ['外資', '投信', '自營商合計']
+                # 確保這些欄位都存在
+                final_cols = [c for c in final_cols if c in display_df.columns]
+                display_df = display_df[final_cols]
+
+                # 5. 定義配色邏輯 (正紅負綠)
+                def color_chip(val):
+                    color = '#FF4B4B' if val > 0 else ('#00B050' if val < 0 else 'white')
+                    return f'color: {color}'
+
+                # 6. 呈現表格
+                st.dataframe(
+                    display_df.style.applymap(color_chip).format("{:,.0f}"),
+                    use_container_width=True
+                )
+        except Exception as e:
+            st.error(f"明細表整理失敗: {e}")
+
         # 外資持股與月營收圖表
+        st.write("---")
         df_hold = get_foreign_holding(ticker_input)
         if not df_hold.empty:
             st.write("---")
@@ -996,6 +1049,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
