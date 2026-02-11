@@ -337,7 +337,7 @@ if 'selected_ticker' not in st.session_state:
 if 'temp_ticker' not in st.session_state:
     st.session_state.temp_ticker = None
 
-FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMS0yOCAwODoyNToyNyIsInVzZXJfaWQiOiJ0ZWRkeWphY2siLCJlbWFpbCI6InRlZGR5amFjazVAeWFob28uY29tLnR3IiwiaXAiOiI0Mi43Mi4yMTEuMTUzIn0.Su4W8X5E9XPN9PZdA03Z6XO6i630kOSvOjcrLowcO-I"
+FINMIND_TOKEN = st.secrets["FINMIND_TOKEN"]
 dl = DataLoader()
 try: dl.set_token(token=FINMIND_TOKEN)
 except: pass
@@ -1073,6 +1073,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
