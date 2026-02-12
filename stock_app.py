@@ -351,7 +351,14 @@ if 'db' not in st.session_state:
 # ==========================================
 st.sidebar.title("📁 帳戶與庫存")
 db_files = [f for f in os.listdir('.') if f.endswith('.json') and f != "package.json"]
-if not db_files: db_files = ["my_stock_db.json"]
+
+# 如果完全沒有 json 檔，建立一個預設的
+if not db_files:
+    default_name = "my_stock_db.json"
+    if not os.path.exists(default_name):
+        save_db({"password_hash": None, "list": {}, "costs": {}}, default_name)
+    db_files = [default_name]
+
 current_db_file = st.sidebar.selectbox("📂 切換帳戶庫存", db_files)
 
 st.sidebar.write("### 🗄️ 帳戶備份")
@@ -1073,6 +1080,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
