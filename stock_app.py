@@ -190,8 +190,8 @@ def record_sale_dialog(): # ✅ 修正 1：移除括號內的 db_file
             }
             
             # 確保 realized_pnl 存在並存入
-       st.session_state.db.setdefault("realized_pnl", []).append(record)
-       save_db_to_sheets(st.session_state.db)
+            st.session_state.db.setdefault("realized_pnl", []).append(record)
+            save_db_to_sheets(st.session_state.db)
             
             if success:
                 st.success(f"✅ 已紀錄 {manual_name} 的獲利並同步至雲端！")
@@ -1060,6 +1060,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
