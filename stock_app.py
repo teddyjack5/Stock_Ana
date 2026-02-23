@@ -362,6 +362,7 @@ if 'temp_ticker' not in st.session_state:
     st.session_state.temp_ticker = None
 
 FINMIND_TOKEN = st.secrets["FINMIND_TOKEN"]
+GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 dl = DataLoader()
 try: dl.set_token(token=FINMIND_TOKEN)
 except: pass
@@ -1104,6 +1105,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
