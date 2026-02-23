@@ -217,11 +217,14 @@ def show_annual_report_dialog():
     # 核心修正：將中文欄位名稱對應到處理邏輯中
     # 確保這裡的名稱與 record_sale_dialog 裡的 record 鍵值完全相同
     try:
-        df_pnl['日期'] = pd.to_datetime(df_pnl['日期'])
+        # 核心修正：加上 .dt.tz_localize(None) 移除時區偏移
+        df_pnl['日期'] = pd.to_datetime(df_pnl['日期']).dt.tz_localize(None) 
         df_pnl['年份'] = df_pnl['日期'].dt.year
     except Exception as e:
-        st.error(f"日期格式轉換失敗: {e}")
-        return
+        # 如果原本就沒有時區資訊，tz_localize(None) 可能會報錯
+        # 備用方案：如果上面失敗，就直接轉日期
+        df_pnl['日期'] = pd.to_datetime(df_pnl['日期'])
+        df_pnl['年份'] = df_pnl['日期'].dt.year
     
     # 3. 年度統計摘要
     summary = df_pnl.groupby('年份').agg({
@@ -1060,6 +1063,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
