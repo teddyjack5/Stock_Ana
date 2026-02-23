@@ -372,97 +372,63 @@ if 'db' not in st.session_state:
     st.session_state.current_file = None
 
 # ==========================================
-# 3. 側邊欄：帳戶管理與安全性
+# 3. 側邊欄：雲端帳戶與安全驗證
 # ==========================================
-st.sidebar.title("📁 帳戶與庫存")
-db_files = [f for f in os.listdir('.') if f.endswith('.json') and f != "package.json"]
+st.sidebar.title("☁️ 雲端帳戶管理")
 
-# 如果完全沒有 json 檔，建立一個預設的
-if not db_files:
-    default_name = "my_stock_db.json"
-    if not os.path.exists(default_name):
-        save_db({"password_hash": None, "list": {}, "costs": {}}, default_name)
-    db_files = [default_name]
-
-current_db_file = st.sidebar.selectbox("📂 切換帳戶庫存", db_files)
-
-st.sidebar.write("### 🗄️ 帳戶備份")
-col_backup1, col_backup2 = st.sidebar.columns(2)
-# 1. 下載按鈕 (Icon 化)
-with open(current_db_file, "r", encoding="utf-8") as f:
-    col_backup1.download_button(
-        label="📥 下載備份",
-        data=f,
-        file_name=current_db_file,
-        mime="application/json",
-        use_container_width=True,
-        help="下載當前庫存 JSON 檔"
-    )
-# 2. 上傳按鈕 (使用 Popover 隱藏大視窗)
-with col_backup2.popover("📤 匯入", use_container_width=True):
-    st.write("### 📂 上傳庫存備份")
-    uploaded_file = st.file_uploader("請選擇 .json 檔案", type=["json"])
-    
-    if uploaded_file is not None:
-        if st.button("🚀 確認匯入並切換", use_container_width=True):
-            try:
-                new_data = json.load(uploaded_file)
-                if "list" in new_data and "costs" in new_data:
-                    # 儲存上傳的檔案到本地
-                    with open(uploaded_file.name, "w", encoding="utf-8") as f:
-                        json.dump(new_data, f, ensure_ascii=False, indent=4)
-                    
-                    st.success(f"已匯入: {uploaded_file.name}")
-                    st.session_state.current_file = uploaded_file.name
-                    st.rerun()
-                else:
-                    st.error("格式錯誤：找不到 list 或 costs 欄位")
-            except Exception as e:
-                st.error(f"解析失敗: {e}")
-
-if st.session_state.current_file != current_db_file:
-    st.session_state.db = load_db(current_db_file)
-    st.session_state.current_file = current_db_file
-
-new_db_name = st.sidebar.text_input("➕ 建立新帳戶名稱", placeholder="例如: 退休基金")
-if st.sidebar.button("建立新帳戶"):
-    if new_db_name:
-        full_name = f"{new_db_name}.json" if not new_db_name.endswith('.json') else new_db_name
-        save_db({"list": {}, "costs": {}}, full_name)
+# 顯示雲端連線狀態
+if st.session_state.db:
+    st.sidebar.success("✅ 已連線至 Google Sheets")
+else:
+    # 如果 db 是空的，嘗試重新載入
+    if st.sidebar.button("🔄 重新連線雲端"):
+        st.session_state.db = load_db_from_sheets()
         st.rerun()
-
-with st.sidebar.expander("🗑️ 危險區域 (刪除帳戶)"):
-    st.warning(f"確定要刪除【{current_db_file}】？")
-    if st.checkbox("我確定要永久刪除", key="confirm_del_db"):
-        if st.button("💥 執行刪除", type="primary"):
-            if len(db_files) > 1:
-                os.remove(current_db_file)
-                st.session_state.current_file = None
-                st.rerun()
-            else: st.error("至少需保留一個帳戶")
 
 st.sidebar.divider()
 
+# --- 密碼驗證邏輯 (適配雲端版) ---
 is_authenticated = False
-if st.session_state.db.get("password_hash") is None:
-    st.sidebar.info("🔓 此帳戶尚未設置密碼")
-    if st.sidebar.checkbox("🔒 設置 4 位數密碼"):
-        new_pwd = st.sidebar.text_input("輸入新密碼", type="password", max_chars=4)
-        if st.sidebar.button("確認設置"):
-            st.session_state.db["password_hash"] = hash_password(new_pwd)
-            save_db(st.session_state.db, current_db_file)
-            st.rerun()
-    is_authenticated = True
-else:
-    input_pwd = st.sidebar.text_input("🔑 輸入 4 位數密碼", type="password", max_chars=4)
-    if input_pwd and hash_password(input_pwd) == st.session_state.db["password_hash"]:
-        is_authenticated = True
-    elif input_pwd: st.sidebar.error("❌ 密碼錯誤")
 
+# 檢查雲端資料庫中是否有密碼紀錄
+if st.session_state.db.get("password_hash") is None:
+    st.sidebar.info("🔓 此雲端帳戶尚未設置密碼")
+    if st.sidebar.checkbox("🔒 設置 4 位數登入密碼"):
+        new_pwd = st.sidebar.text_input("設定新密碼", type="password", max_chars=4)
+        if st.sidebar.button("確認設置"):
+            if len(new_pwd) == 4:
+                st.session_state.db["password_hash"] = hash_password(new_pwd)
+                # 同步回 Google Sheets
+                save_db_to_sheets(st.session_state.db)
+                st.success("密碼已設定並同步至雲端！")
+                st.rerun()
+            else:
+                st.error("請輸入 4 位數字")
+    # 尚未設定密碼時，暫時允許進入以進行初次設定
+    is_authenticated = True 
+else:
+    # 已有密碼，要求輸入
+    input_pwd = st.sidebar.text_input("🔑 輸入 4 位數密碼開啟報告", type="password", max_chars=4)
+    if input_pwd:
+        if hash_password(input_pwd) == st.session_state.db["password_hash"]:
+            is_authenticated = True
+        else:
+            st.sidebar.error("❌ 密碼錯誤")
+
+# 強制擋住未經驗證的使用者
 if not is_authenticated:
-    st.warning("🔒 請輸入密碼以開啟報告")
+    st.warning("🔒 請輸入正確密碼以解鎖「小鐵的股票分析報告」")
     st.stop()
 
+# --- 側邊欄額外功能 ---
+with st.sidebar.expander("⚙️ 進階設定"):
+    if st.button("♻️ 強制刷新雲端數據"):
+        st.session_state.db = load_db_from_sheets()
+        st.toast("已從 Google Sheets 重新獲取最新數據")
+    
+    st.write("---")
+    st.caption("數據來源：Google Sheets")
+    st.caption(f"最後同步時間：{datetime.now().strftime('%H:%M:%S')}")
 # ==========================================
 # 4. 主介面：資產總覽卡片
 # ==========================================
@@ -1105,6 +1071,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
