@@ -129,38 +129,26 @@ def show_full_portfolio_report(active_costs, active_list):
         st.metric("合計預估總損益", f"NT$ {total_p:,}", delta=f"{total_p:,}")
 
 @st.dialog("➕ 新增股票至清單")
-def add_stock_dialog(db_file):
-    """新增股票代號與名稱（含自動校正、驗證、及自動跳轉邏輯）"""
-    col1, col2 = st.columns(2)
-    raw_id = col1.text_input("股票代號", placeholder="例如: 0050 或 2330").strip()
-    new_name = col2.text_input("股票名稱", placeholder="台積電")
+def add_stock_dialog(): # 👈 這裡的括號要是空的！
+    new_ticker = st.text_input("股票代號 (例如: 2330.TW)", placeholder="2330.TW")
+    new_name = st.text_input("股票名稱", placeholder="台積電")
     
-    st.write("---")
-    c1, c2 = st.columns(2)
-    if c1.button("取消", use_container_width=True): 
-        st.rerun()
-        
-    if c2.button("確認加入", type="primary", use_container_width=True):
-        if raw_id and new_name:
-            formatted_id = raw_id.upper()
-            if "." not in formatted_id:
-                formatted_id = f"{formatted_id}.TW"
+    if st.button("確認新增"):
+        if new_ticker and new_name:
+            # 1. 更新 session_state 裡的資料
+            st.session_state.db["list"][new_ticker] = new_name
+            st.session_state.db["costs"][new_ticker] = {"cost": 0.0, "qty": 0.0}
             
-            with st.spinner(f"正在驗證代號 {formatted_id}..."):
-                check_ticker = yf.Ticker(formatted_id)
-                try:
-                    info = check_ticker.history(period="1d")
-                    if info.empty:
-                        alt_id = raw_id.upper() + ".TWO"
-                        info_alt = yf.Ticker(alt_id).history(period="1d")
-                        if not info_alt.empty:
-                            formatted_id = alt_id
-                        else:
-                            st.error(f"❌ 找不到股票代號: {raw_id}")
-                            return
-                except:
-                    st.error("⚠️ 驗證過程發生網路錯誤")
-                    return
+            # 2. 關鍵修正：呼叫雲端儲存函數，不傳入檔名
+            success = save_db_to_sheets(st.session_state.db)
+            
+            if success:
+                st.success(f"已成功新增 {new_name} ({new_ticker}) 並同步至雲端！")
+                st.rerun()
+            else:
+                st.error("同步至雲端失敗，請檢查連線。")
+        else:
+            st.error("請填寫完整的代號與名稱")
 
             # --- 核心連動修正：同步設定 Widget 狀態 ---
             st.session_state.selected_ticker = formatted_id
@@ -1074,6 +1062,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
