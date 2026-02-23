@@ -5,3 +5,5 @@ pandas
 FinMind
 tqdm
 requests
+st-gsheets-connection
+
