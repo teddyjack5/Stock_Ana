@@ -159,7 +159,7 @@ def add_stock_dialog(): # 👈 這裡的括號要是空的！
             st.balloons()
             st.toast(f"✅ 已成功加入 {new_name}", icon="💰")
             st.rerun()
-        else:
+    else:
             st.error("請完整填寫代號與名稱")
 
 @st.dialog("⚠️ 刪除確認")
@@ -1062,6 +1062,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
