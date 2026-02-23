@@ -9,50 +9,74 @@ import requests
 from datetime import datetime, timedelta
 from FinMind.data import DataLoader
 from plotly.subplots import make_subplots
+from streamlit_gsheets import GSheetsConnection
 
 # ==========================================
-# 0. 核心配置與資料庫工具函數
+# 核心功能：雲端資料庫 (Google Sheets)
 # ==========================================
-def hash_password(password):
-    if not password: return None
-    return hashlib.sha256(password.encode()).hexdigest()
 
-def load_db(filename):
-    """載入庫存 JSON 檔案並處理舊版相容性"""
-    default_data = {
-        "password_hash" : None,
-        "list": {"2356.TW": "英業達", "0050.TW": "元大台灣50"},
-        "costs": {
-            "2356.TW": {"cost": 49.0, "qty": 1.0},
-            "0050.TW": {"cost": 70.0, "qty": 1.0}
-        },
-        "realized_pnl": []
-    }
-    if os.path.exists(filename):
-        try:
-            with open(filename, "r", encoding="utf-8") as f:
-                content = json.load(f)
-                if "groups" in content:
-                    first_group_name = list(content["groups"].keys())[0]
-                    st.toast(f"🔄 偵測到舊版格式，已自動轉換帳戶")
-                    return {
-                        "list": content["groups"][first_group_name].get("list", {}),
-                        "costs": content["groups"][first_group_name].get("costs", {}),
-                        "password_hash": None
-                    }
-                content.setdefault("list", {})
-                content.setdefault("costs", {})
-                content.setdefault("realized_pnl", [])
-                return content
-        except Exception as e:
-            st.error(f"讀取 JSON 出錯: {e}")
-            return default_data
-    return default_data
+def load_db_from_sheets():
+    """從 Google Sheets 載入數據"""
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    db = {"password_hash": None, "list": {}, "costs": {}}
+    
+    try:
+        # 1. 讀取庫存 (加上 ttl=0 確保每次都拿最新)
+        df_inv = conn.read(worksheet="Inventory", ttl=0)
+        if not df_inv.empty:
+            for _, row in df_inv.iterrows():
+                if pd.isna(row['Ticker']): continue
+                t = str(row['Ticker'])
+                db["list"][t] = str(row['Name'])
+                db["costs"][t] = {"cost": float(row['Cost']), "qty": float(row['Qty'])}
+        
+        # 2. 讀取密碼
+        df_sys = conn.read(worksheet="System", ttl=0)
+        if not df_sys.empty:
+            pwd_row = df_sys[df_sys['Key'] == 'password_hash']
+            if not pwd_row.empty:
+                db["password_hash"] = pwd_row['Value'].values[0]
+                
+        return db
+    except Exception as e:
+        st.warning(f"目前雲端無資料或讀取失敗，將使用預設值。({e})")
+        return db
 
-def save_db(data, filename):
-    """儲存資料至 JSON 檔案"""
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+def save_db_to_sheets(db):
+    """將資料存回 Google Sheets"""
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    
+    # 準備庫存數據
+    inv_data = []
+    for t, name in db["list"].items():
+        inv_data.append({
+            "Ticker": t,
+            "Name": name,
+            "Cost": db["costs"][t]["cost"],
+            "Qty": db["costs"][t]["qty"]
+        })
+    df_inv = pd.DataFrame(inv_data)
+    
+    # 準備密碼數據
+    df_sys = pd.DataFrame([{"Key": "password_hash", "Value": db["password_hash"]}])
+    
+    try:
+        # 更新雲端分頁
+        conn.update(worksheet="Inventory", data=df_inv)
+        conn.update(worksheet="System", data=df_sys)
+        return True
+    except Exception as e:
+        st.error(f"雲端存檔失敗: {e}")
+        return False
+
+if 'db' not in st.session_state:
+    # 啟動時直接讀取雲端
+    st.session_state.db = load_db_from_sheets()
+
+if st.button("💾 儲存並同步至雲端"):
+    success = save_db_to_sheets(st.session_state.db)
+    if success:
+        st.success("✅ 資料已永久同步至 Google Sheets！")
 
 # ==========================================
 # 1. 互動式對話框 (Dialogs)
@@ -1080,6 +1104,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
