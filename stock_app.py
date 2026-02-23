@@ -14,60 +14,31 @@ from streamlit_gsheets import GSheetsConnection
 # ==========================================
 # 核心功能：雲端資料庫 (Google Sheets)
 # ==========================================
+SCRIPT_URL = st.secrets["GOOGLE_SCRIPT_URL"]
+
 def load_db_from_sheets():
-    """從 Google Sheets 載入數據"""
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    db = {"password_hash": None, "list": {}, "costs": {}}
-    
+    """透過 Apps Script 讀取整包數據 (含密碼)"""
     try:
-        # 1. 讀取庫存 (加上 ttl=0 確保每次都拿最新)
-        df_inv = conn.read(worksheet="Inventory", ttl=0)
-        if not df_inv.empty:
-            for _, row in df_inv.iterrows():
-                if pd.isna(row['Ticker']): continue
-                t = str(row['Ticker'])
-                db["list"][t] = str(row['Name'])
-                db["costs"][t] = {"cost": float(row['Cost']), "qty": float(row['Qty'])}
-        
-        # 2. 讀取密碼
-        df_sys = conn.read(worksheet="System", ttl=0)
-        if not df_sys.empty:
-            pwd_row = df_sys[df_sys['Key'] == 'password_hash']
-            if not pwd_row.empty:
-                db["password_hash"] = pwd_row['Value'].values[0]
-                
-        return db
+        response = requests.get(SCRIPT_URL, timeout=10)
+        if response.status_code == 200:
+            return response.json()
     except Exception as e:
-        st.warning(f"目前雲端無資料或讀取失敗，將使用預設值。({e})")
-        return db
+        st.error(f"雲端讀取失敗，請檢查 Apps Script 網址: {e}")
+    # 失敗時回傳空結構
+    return {"password_hash": None, "list": {}, "costs": {}}
 
 def save_db_to_sheets(db):
-    """將資料存回 Google Sheets"""
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    
-    # 準備庫存數據
-    inv_data = []
-    for t, name in db["list"].items():
-        inv_data.append({
-            "Ticker": t,
-            "Name": name,
-            "Cost": db["costs"][t]["cost"],
-            "Qty": db["costs"][t]["qty"]
-        })
-    df_inv = pd.DataFrame(inv_data)
-    
-    # 準備密碼數據
-    df_sys = pd.DataFrame([{"Key": "password_hash", "Value": db["password_hash"]}])
-    
+    """將整包數據 (含密碼) 丟給 Apps Script 存檔"""
     try:
-        # 更新雲端分頁
-        conn.update(worksheet="Inventory", data=df_inv)
-        conn.update(worksheet="System", data=df_sys)
-        return True
+        # 注意：Apps Script 的 POST 有時候會轉址，requests 會自動處理
+        response = requests.post(SCRIPT_URL, json=db, timeout=15)
+        if "Success" in response.text:
+            return True
+        else:
+            st.error(f"存檔回傳異常: {response.text}")
     except Exception as e:
-        st.error(f"雲端存檔失敗: {e}")
-        return False
-
+        st.error(f"雲端存檔連線失敗: {e}")
+    return False
 if 'db' not in st.session_state:
     # 啟動時直接讀取雲端
     st.session_state.db = load_db_from_sheets()
@@ -1062,6 +1033,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
