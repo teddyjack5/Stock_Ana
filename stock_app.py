@@ -453,7 +453,7 @@ profit = total_value - total_cost
 roi = (profit / total_cost * 100) if total_cost > 0 else 0
 p_color = "#FF4B4B" if profit > 0 else ("#00B050" if profit < 0 else "#FFFFFF")
 
-st.write(f"### 🏢 帳戶總覽：{current_db_file.replace('.json', '')}")
+st.write("### 🏢 小鐵的雲端投資組合")
 st.markdown(f"""
     <div style="background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%); padding: 25px; border-radius: 20px; border-left: 10px solid {p_color};">
         <div style="display: flex; justify-content: space-around; align-items: center;">
@@ -476,36 +476,34 @@ def update_ticker_state():
 
 st.sidebar.subheader("⚙️ 庫存管理")
 if st.sidebar.button("➕ 新增股票項目", use_container_width=True):
-    add_stock_dialog(current_db_file)
+    # 修正：不再傳入 current_db_file
+    add_stock_dialog() 
 
 if st.sidebar.button("🔍 查看目前全帳戶明細", use_container_width=True):
-    show_full_portfolio_report(active_costs, active_list)
+    show_full_portfolio_report(st.session_state.db["costs"], st.session_state.db["list"])
 
 st.sidebar.write("### 📈 績效追蹤")
 col_pnl1, col_pnl2 = st.sidebar.columns(2)
 
 # 按鈕 1：紀錄獲利
-if col_pnl1.button("💰 紀錄賣出", use_container_width=True, help="點擊手動紀錄賣出獲利"):
-    record_sale_dialog(current_db_file)
+if col_pnl1.button("💰 紀錄賣出", use_container_width=True):
+    # 修正：不再傳入 current_db_file
+    record_sale_dialog() 
 
-# 按鈕 2：查看報表 (使用 Icon)
-if col_pnl2.button("📊 查看報表", use_container_width=True, help="開啟年度獲利結算表"):
+if col_pnl2.button("📊 查看報表", use_container_width=True):
     show_annual_report_dialog()
 
 st.sidebar.write("---")
-# 1. 取得清單
 ticker_options = list(st.session_state.db["list"].keys())
 
-# 2. 核心修正：強制校準 temp_ticker 以免 selectbox 拒絕跳轉
+# 核心修正：強制校準 temp_ticker
 if 'selected_ticker' in st.session_state and st.session_state.selected_ticker in ticker_options:
     st.session_state.temp_ticker = st.session_state.selected_ticker
 
-# 找出 index
 default_index = 0
 if st.session_state.selected_ticker in ticker_options:
     default_index = ticker_options.index(st.session_state.selected_ticker)
 
-# 3. 渲染選單
 selected_ticker = st.sidebar.selectbox(
     "選取庫存個股", 
     ticker_options, 
@@ -518,7 +516,7 @@ st.session_state.selected_ticker = selected_ticker
 
 if selected_ticker:
     if st.sidebar.button(f"🗑️ 刪除 {selected_ticker}", use_container_width=True):
-        delete_confirm_dialog(selected_ticker, active_list.get(selected_ticker), current_db_file)
+        delete_confirm_dialog(selected_ticker, st.session_state.db["list"].get(selected_ticker))
 
 custom_search = st.sidebar.text_input("🔍 全域搜尋 (不加入庫存)", "")
 ticker_input = custom_search if custom_search else selected_ticker
@@ -537,7 +535,6 @@ current_costs = st.session_state.db["costs"].get(selected_ticker, {"cost": 0.0, 
 st.sidebar.write("---")
 st.sidebar.subheader(f"💰 帳務管理: {st.session_state.db['list'].get(selected_ticker, '未知')}")
 
-# 使用動態 Key 確保切換個股時輸入框會刷新 value
 new_cost = st.sidebar.number_input(
     "買入成本", 
     value=float(current_costs["cost"]), 
@@ -554,8 +551,9 @@ new_qty = st.sidebar.number_input(
 
 if st.sidebar.button("💾 儲存帳務修改", use_container_width=True):
     st.session_state.db["costs"][selected_ticker] = {"cost": new_cost, "qty": new_qty}
-    save_db(st.session_state.db, current_db_file)
-    st.sidebar.success(f"已更新 {selected_ticker} 帳務資料")
+    # 修正：呼叫雲端儲存函數，不傳檔名
+    save_db_to_sheets(st.session_state.db) 
+    st.sidebar.success(f"已更新 {selected_ticker} 並同步至雲端")
     st.rerun()
 
 show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
@@ -1071,6 +1069,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
