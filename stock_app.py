@@ -350,7 +350,7 @@ st.write("### 🏢 小鐵的雲端投資組合")
 st.markdown(f"""
     <div style="background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%); padding: 25px; border-radius: 20px; border-left: 10px solid {p_color};">
         <div style="display: flex; justify-content: space-around; align-items: center;">
-            <div><p style="color: gray; margin: 0;">資產總市值</p><h2 style="color: white; margin: 0;">NT$ {int(total_value):?}</h2></div>
+            <div><p style="color: gray; margin: 0;">資產總市值</p><h2 style="color: white; margin: 0;">NT$ {int(total_value):,}</h2></div>
             <div style="border-left: 1px solid #444; border-right: 1px solid #444; padding: 0 30px;">
                 <p style="color: gray; margin: 0;">預估總損益</p>
                 <h1 style="color: {p_color}; margin: 0; font-size: 36px;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
@@ -641,3 +641,4 @@ if show_news and ticker_input:
                     st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
         else: st.info("⚠️ 近期暫無相關新聞。")
     except: pass
+
