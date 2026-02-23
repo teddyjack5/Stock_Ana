@@ -14,7 +14,6 @@ from streamlit_gsheets import GSheetsConnection
 # ==========================================
 # 核心功能：雲端資料庫 (Google Sheets)
 # ==========================================
-
 def load_db_from_sheets():
     """從 Google Sheets 載入數據"""
     conn = st.connection("gsheets", type=GSheetsConnection)
@@ -77,6 +76,12 @@ if st.button("💾 儲存並同步至雲端"):
     success = save_db_to_sheets(st.session_state.db)
     if success:
         st.success("✅ 資料已永久同步至 Google Sheets！")
+
+def hash_password(password):
+    """將密碼轉換為 SHA-256 雜湊值，確保安全性"""
+    if not password:
+        return None
+    return hashlib.sha256(password.encode()).hexdigest()
 
 # ==========================================
 # 1. 互動式對話框 (Dialogs)
@@ -1069,6 +1074,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
