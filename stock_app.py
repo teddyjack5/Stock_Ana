@@ -134,25 +134,37 @@ def add_stock_dialog(): # 👈 這裡的括號要是空的！
             st.error("請完整填寫代號與名稱")
 
 @st.dialog("⚠️ 刪除確認")
-def delete_confirm_dialog(ticker, name, db_file):
+def delete_confirm_dialog(ticker, name): # ✅ 修正 1：移除 db_file 參數
     st.warning(f"確定要從庫存中刪除 **{name} ({ticker})** 嗎？")
+    st.write("此操作將同時移除該股的買入成本與數量紀錄。")
+    
     c1, c2 = st.columns(2)
-    if c1.button("取消", use_container_width=True): st.rerun()
+    if c1.button("取消", use_container_width=True): 
+        st.rerun()
+        
     if c2.button("確認刪除", type="primary", use_container_width=True):
+        # 移除資料
         st.session_state.db["list"].pop(ticker, None)
         st.session_state.db["costs"].pop(ticker, None)
-        save_db(st.session_state.db, db_file)
-        # 刪除後重置選取，避免報錯
-        st.session_state.selected_ticker = None
-        st.session_state.temp_ticker = None
-        st.rerun()
+        
+        # ✅ 修正 2：改用雲端儲存函數，不傳入 db_file
+        success = save_db_to_sheets(st.session_state.db)
+        
+        if success:
+            # 刪除後重置選取，避免畫面殘留已刪除的資料
+            st.session_state.selected_ticker = None
+            st.session_state.temp_ticker = None
+            st.success(f"已從雲端刪除 {name}")
+            st.rerun()
+        else:
+            st.error("雲端刪除失敗，請檢查連線。")
 
 @st.dialog("💰 紀錄已實現獲利")
-def record_sale_dialog(db_file):
-    """手動紀錄賣出獲利的對話框 (完全手動輸入版)"""
+def record_sale_dialog(): # ✅ 修正 1：移除括號內的 db_file
+    """手動紀錄賣出獲利的對話框 (雲端同步版)"""
     date = st.date_input("賣出日期", datetime.now())
     
-    # 改為手動輸入代號與名稱
+    # 手動輸入代號與名稱
     col_a, col_b = st.columns(2)
     manual_id = col_a.text_input("股票代號", placeholder="例如: 2330")
     manual_name = col_b.text_input("股票名稱", placeholder="例如: 台積電")
@@ -162,7 +174,7 @@ def record_sale_dialog(db_file):
     profit_pct = col2.number_input("獲利百分比", value=0.0, step=0.1, format="%.2f")
     
     st.write("---")
-    if st.button("確認存入帳本", type="primary", use_container_width=True):
+    if st.button("確認存入帳本並同步雲端", type="primary", use_container_width=True):
         if manual_id and manual_name:
             # 自動處理代號格式 (轉大寫並補上 .TW)
             formatted_id = manual_id.upper()
@@ -176,14 +188,22 @@ def record_sale_dialog(db_file):
                 "獲利": profit_amt,
                 "百分比": profit_pct
             }
+            
             # 確保 realized_pnl 存在並存入
-            st.session_state.db.setdefault("realized_pnl", []).append(record)
-            save_db(st.session_state.db, db_file)
-            st.success(f"✅ 已紀錄 {manual_name} 的獲利！")
-            st.rerun()
+            if "realized_pnl" not in st.session_state.db:
+                st.session_state.db["realized_pnl"] = []
+            st.session_state.db["realized_pnl"].append(record)
+            
+            # ✅ 修正 2：改用雲端儲存函數 save_db_to_sheets，且不需要傳入檔名
+            success = save_db_to_sheets(st.session_state.db)
+            
+            if success:
+                st.success(f"✅ 已紀錄 {manual_name} 的獲利並同步至雲端！")
+                st.rerun()
+            else:
+                st.error("❌ 雲端同步失敗，請檢查 Apps Script 設定。")
         else:
             st.error("請填寫股票代號與名稱")
-
 @st.dialog("🗓️ 年度獲利結算報表", width="large")
 def show_annual_report_dialog():
     """顯示已實現損益的年度統計報表 (強化的紅綠配色版)"""
@@ -1033,6 +1053,7 @@ if show_news and ticker_input:
             st.info("⚠️ 近期暫無相關產經新聞。")
     except Exception as e:
         st.warning(f"新聞抓取暫時異常，請稍後再試。")
+
 
 
 
