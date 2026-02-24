@@ -665,7 +665,7 @@ if ticker_input:
                 <h1 style="color: {rec_color}; margin-top: 0; font-size: 42px; text-align: center;">{rec_text}</h1>
                 <div style="padding: 15px; background: rgba(0,0,0,0.2); border-radius: 10px; margin-bottom: 20px;">
                     <p style="color: #EEEEEE; font-size: 16px; line-height: 1.6; margin: 0;">
-                        <b>💬 小鐵點評：</b>{summary_advice}
+                        <b>💬 綜合點評：</b>{summary_advice}
                     </p>
                 </div>
                 <div style="display: flex; justify-content: space-around; padding: 10px;">
@@ -689,6 +689,7 @@ if show_news and ticker_input:
                     st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
         else: st.info("⚠️ 近期暫無相關新聞。")
     except: pass
+
 
 
 
