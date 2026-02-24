@@ -590,6 +590,7 @@ if ticker_input:
             else: 
                 st.error("**空頭排列走勢**")
                 trend_msg = "標準空頭走勢，建議先管住手，不要輕易接刀。"
+            st.caption(trend_msg)
 
         with col_b:
             st.markdown("### 🧠 心理強弱")
@@ -602,6 +603,7 @@ if ticker_input:
             else: 
                 st.info(f"**運行區間 ({curr_rsi:.1f})**")
                 psy_msg = "心理指標平穩，目前沒有過熱或過冷跡象。"
+            st.caption(psy_msg)
 
         with col_c:
             st.markdown("### 🚀 動能雷達")
@@ -616,6 +618,7 @@ if ticker_input:
             else: 
                 st.info("**觀望等待信號**")
                 momo_msg = "動能出現縮減，盤勢可能陷入整理，等待下一個方向。"
+            st.caption(momo_msg)
 
         # 綜合總分計算與籌碼/ATR 邏輯
         score = 0
@@ -686,5 +689,6 @@ if show_news and ticker_input:
                     st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
         else: st.info("⚠️ 近期暫無相關新聞。")
     except: pass
+
 
 
