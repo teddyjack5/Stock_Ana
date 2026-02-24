@@ -566,32 +566,58 @@ if ticker_input:
         fig_main.update_layout(height=900, template="plotly_dark", xaxis_rangeslider_visible=False); st.plotly_chart(fig_main, use_container_width=True)
 
         # 7. AI 診斷與評分邏輯
-        st.write("---"); st.subheader("💡 小鐵專屬：AI 投資策略診斷")
-        curr_rsi = data['RSI'].iloc[-1]; curr_macd = data['MACD'].iloc[-1]; curr_sig = data['Signal'].iloc[-1]
+        st.write("---")
+        st.subheader("💡 小鐵專屬：AI 投資策略診斷")
+        curr_rsi = data['RSI'].iloc[-1]
+        curr_macd = data['MACD'].iloc[-1]
+        curr_sig = data['Signal'].iloc[-1]
+        
         col_a, col_b, col_c = st.columns(3)
-        is_above_ma20 = price > float(curr['MA20']); macd_golden_cross = curr_macd > curr_sig
+        is_above_ma20 = price > float(curr['MA20'])
+        macd_golden_cross = curr_macd > curr_sig
         
         with col_a:
             st.markdown("### 📈 技術趨勢")
-            if is_above_ma20 and macd_golden_cross: st.success("**強勢多頭確立**")
-            elif is_above_ma20 and not macd_golden_cross: st.warning("**高檔震盪警訊**")
-            elif not is_above_ma20 and macd_golden_cross: st.info("**築底反彈階段**")
-            else: st.error("**空頭排列走勢**")
+            if is_above_ma20 and macd_golden_cross: 
+                st.success("**強勢多頭確立**")
+                trend_msg = "目前股價站穩月線且 MACD 金叉，多頭動能強勁。"
+            elif is_above_ma20 and not macd_golden_cross: 
+                st.warning("**高檔震盪警訊**")
+                trend_msg = "雖然股價在月線上，但出現轉弱訊號，需小心高檔震盪。"
+            elif not is_above_ma20 and macd_golden_cross: 
+                st.info("**築底反彈階段**")
+                trend_msg = "股價雖在月線下，但 MACD 已金叉，暗示可能有跌深反彈機會。"
+            else: 
+                st.error("**空頭排列走勢**")
+                trend_msg = "標準空頭走勢，建議先管住手，不要輕易接刀。"
 
         with col_b:
             st.markdown("### 🧠 心理強弱")
-            if curr_rsi >= 75: st.error(f"**極度貪婪 ({curr_rsi:.1f})**")
-            elif curr_rsi <= 25: st.success(f"**極度恐慌 ({curr_rsi:.1f})**")
-            else: st.info(f"**運行區間 ({curr_rsi:.1f})**")
+            if curr_rsi >= 75: 
+                st.error(f"**極度貪婪 ({curr_rsi:.1f})**")
+                psy_msg = "市場情緒過熱，追高風險極大，建議適度停利。"
+            elif curr_rsi <= 25: 
+                st.success(f"**極度恐慌 ({curr_rsi:.1f})**")
+                psy_msg = "市場已出現非理性拋售，這裡是勇敢者的買點。"
+            else: 
+                st.info(f"**運行區間 ({curr_rsi:.1f})**")
+                psy_msg = "心理指標平穩，目前沒有過熱或過冷跡象。"
 
         with col_c:
             st.markdown("### 🚀 動能雷達")
-            curr_hist = data['Hist'].iloc[-1]; prev_hist = data['Hist'].iloc[-2]
-            if curr_macd > curr_sig and curr_hist > prev_hist: st.success("**攻擊火力全開**")
-            elif curr_macd < curr_sig and curr_hist < prev_hist: st.error("**跌勢正在加速**")
-            else: st.info("**觀望等待信號**")
+            curr_hist = data['Hist'].iloc[-1]
+            prev_hist = data['Hist'].iloc[-2]
+            if curr_macd > curr_sig and curr_hist > prev_hist: 
+                st.success("**攻擊火力全開**")
+                momo_msg = "紅柱持續拉長，主力拉抬意願高，動能非常正面。"
+            elif curr_macd < curr_sig and curr_hist < prev_hist: 
+                st.error("**跌勢正在加速**")
+                momo_msg = "綠柱持續伸長，下殺動能還沒竭盡，避開為妙。"
+            else: 
+                st.info("**觀望等待信號**")
+                momo_msg = "動能出現縮減，盤勢可能陷入整理，等待下一個方向。"
 
-        # 綜合總分計算
+        # 綜合總分計算與籌碼/ATR 邏輯
         score = 0
         if price > float(curr['MA20']): score += 2
         else: score -= 2
@@ -602,31 +628,50 @@ if ticker_input:
         
         total_net = f_net + d_net
         chip_status = "中性觀望"; chip_color = "#FFFFFF"
-        if f_net > 0 and d_net > 0: score += 2; chip_status = "🔥 土洋同買"; chip_color = "#FF4B4B"
-        elif total_net > 0: score += 1; chip_status = "✅ 法人偏多"; chip_color = "#FF4B4B"
-        elif total_net < 0: score -= 1; chip_status = "❌ 法人撤出"; chip_color = "#00B050"
+        if f_net > 0 and d_net > 0: 
+            score += 2; chip_status = "🔥 土洋同買"; chip_color = "#FF4B4B"
+        elif total_net > 0: 
+            score += 1; chip_status = "✅ 法人偏多"; chip_color = "#FF4B4B"
+        elif total_net < 0: 
+            score -= 1; chip_status = "❌ 法人撤出"; chip_color = "#00B050"
 
         atr_stop = data['ATR_Trailing'].iloc[-1]
-        if price < atr_stop: score -= 1; atr_status = "⚠️ 跌破防線"; atr_color = "#00B050"
-        else: atr_status = "✅ 守住支撐"; atr_color = "#FF4B4B"
+        if price < atr_stop: 
+            score -= 1; atr_status = "⚠️ 跌破防線"; atr_color = "#00B050"
+        else: 
+            atr_status = "✅ 守住支撐"; atr_color = "#FF4B4B"
 
-        # 最終評語定義
-        if score >= 4: rec_text, rec_color = "🔥 強力進攻", "#FF4B4B"
-        elif score >= 2: rec_text, rec_color = "🔎 偏多觀察", "#FF4B4B"
-        elif score >= 0: rec_text, rec_color = "💤 觀望為宜", "#FFFFFF"
-        else: rec_text, rec_color = "🚨 嚴防急跌", "#00B050"
+        # 最終評語與「人性化」總結
+        if score >= 4: 
+            rec_text, rec_color = "🔥 強力進攻", "#FF4B4B"
+            summary_advice = "目前的技術與籌碼面呈現大獲全勝！法人正在用力抬轎，且技術指標毫無疲態。若手中持有可讓獲利奔跑；若想進場，可沿著 5MA 積極佈局。"
+        elif score >= 2: 
+            rec_text, rec_color = "🔎 偏多觀察", "#FF4B4B"
+            summary_advice = "雖然趨勢偏多，但還不到全面攻擊的熱度。建議採取分批佈局策略，並關注 ATR 支撐位，只要不破防線都可安心持有。"
+        elif score >= 0: 
+            rec_text, rec_color = "💤 觀望為宜", "#FFFFFF"
+            summary_advice = "目前盤勢不明顯，像是陷入泥沼的肉搏戰。多空因素互見，不建議在這裡做大動作，保持現金水位，等待下一個明顯的金叉訊號。"
+        else: 
+            rec_text, rec_color = "🚨 嚴防急跌", "#00B050"
+            summary_advice = "警報響起！技術面已全面走弱，且法人似乎正在悄悄離場。這時候保持空手或是嚴格執行停損是明智之舉，留得青山在，不怕沒材燒。"
 
+        # 顯示大圖卡
         st.markdown(f"""
-    <div style="border-radius: 15px; padding: 20px; border: 2px solid {rec_color}; text-align: center; background-color: rgba(255,255,255,0.05); margin: 20px 0;">
-        <h3 style="color: #AAAAAA; margin-bottom: 5px;">🏆 小鐵全方位評等</h3>
-        <h1 style="color: {rec_color}; margin-top: 0; font-size: 38px;">{rec_text}</h1>
-        <div style="display: flex; justify-content: space-around; background-color: rgba(0,0,0,0.2); padding: 15px; border-radius: 10px;">
-            <div style="flex: 1;"><p style="color: #888888; font-size: 12px; margin: 0;">籌碼走向</p><p style="color: {chip_color}; font-weight: bold; margin: 0;">{chip_status}</p></div>
-            <div style="flex: 1; border-left: 1px solid #444; border-right: 1px solid #444;"><p style="color: #888888; font-size: 12px; margin: 0;">ATR 防線</p><p style="color: {atr_color}; font-weight: bold; margin: 0;">{atr_status}</p></div>
-            <div style="flex: 1;"><p style="color: #888888; font-size: 12px; margin: 0;">綜合得分</p><p style="color: #FFFFFF; font-weight: bold; margin: 0;">{score} 分</p></div>
-        </div>
-    </div>
-""", unsafe_allow_html=True)
+            <div style="border-radius: 15px; padding: 25px; border: 2px solid {rec_color}; background-color: rgba(255,255,255,0.05); margin: 20px 0;">
+                <h3 style="color: #AAAAAA; margin-bottom: 5px; text-align: center;">🏆 小鐵全方位評等</h3>
+                <h1 style="color: {rec_color}; margin-top: 0; font-size: 42px; text-align: center;">{rec_text}</h1>
+                <div style="padding: 15px; background: rgba(0,0,0,0.2); border-radius: 10px; margin-bottom: 20px;">
+                    <p style="color: #EEEEEE; font-size: 16px; line-height: 1.6; margin: 0;">
+                        <b>💬 小鐵點評：</b>{summary_advice}
+                    </p>
+                </div>
+                <div style="display: flex; justify-content: space-around; padding: 10px;">
+                    <div style="text-align: center;"><p style="color: #888888; font-size: 13px; margin: 0;">籌碼走向</p><p style="color: {chip_color}; font-weight: bold; font-size: 18px; margin: 0;">{chip_status}</p></div>
+                    <div style="text-align: center; border-left: 1px solid #444; border-right: 1px solid #444; padding: 0 20px;"><p style="color: #888888; font-size: 13px; margin: 0;">ATR 防線</p><p style="color: {atr_color}; font-weight: bold; font-size: 18px; margin: 0;">{atr_status}</p></div>
+                    <div style="text-align: center;"><p style="color: #888888; font-size: 13px; margin: 0;">綜合得分</p><p style="color: #FFFFFF; font-weight: bold; font-size: 18px; margin: 0;">{score} 分</p></div>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
 
 # 8. 產經新聞區 (自動去重)
 if show_news and ticker_input:
@@ -641,4 +686,5 @@ if show_news and ticker_input:
                     st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
         else: st.info("⚠️ 近期暫無相關新聞。")
     except: pass
+
 
