@@ -347,70 +347,74 @@ roi = (profit / total_cost * 100) if total_cost > 0 else 0
 p_color = "#FF4B4B" if profit > 0 else ("#00B050" if profit < 0 else "#FFFFFF")
 
 st.write("### 🏢 小鐵的雲端投資組合")
-st.markdown(f"""
-    <div style="background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%); padding: 25px; border-radius: 20px; border-left: 10px solid {p_color};">
-        <div style="display: flex; justify-content: space-around; align-items: center;">
-            <div><p style="color: gray; margin: 0;">資產總市值</p><h2 style="color: white; margin: 0;">NT$ {int(total_value):,}</h2></div>
-            <div style="border-left: 1px solid #444; border-right: 1px solid #444; padding: 0 30px;">
-                <p style="color: gray; margin: 0;">預估總損益</p>
+# 1. 建立左右兩欄 (比例 4:6)
+col_summary, col_chart = st.columns([4, 6])
+
+with col_summary:
+    # 左側：放置原本的大數據指標，改為垂直堆疊
+    st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%); padding: 20px; border-radius: 15px; border-left: 10px solid {p_color}; height: 380px; display: flex; flex-direction: column; justify-content: center;">
+            <div style="margin-bottom: 20px;">
+                <p style="color: gray; margin: 0; font-size: 14px;">資產總市值</p>
+                <h2 style="color: white; margin: 0; font-size: 28px;">NT$ {int(total_value):,}</h2>
+            </div>
+            <div style="margin-bottom: 20px;">
+                <p style="color: gray; margin: 0; font-size: 14px;">預估總損益</p>
                 <h1 style="color: {p_color}; margin: 0; font-size: 36px;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
             </div>
-            <div><p style="color: gray; margin: 0;">總報酬率</p><h2 style="color: {p_color}; margin: 0;">{roi:.2f}%</h2></div>
+            <div>
+                <p style="color: gray; margin: 0; font-size: 14px;">總報酬率</p>
+                <h2 style="color: {p_color}; margin: 0; font-size: 28px;">{roi:.2f}%</h2>
+            </div>
         </div>
-    </div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-if active_costs and total_value > 0:
-    # 1. 準備圓餅圖數據
-    labels = []
-    values = []
-    for t_code, info in active_costs.items():
-        try:
-            # 取得該股目前市價（利用剛才計算總資產時可能已有的邏輯，或重新取最後一筆價格）
-            # 這裡我們用比較保險的方式，直接從剛才計算出的 total_value 邏輯中拆分
-            temp_df = yf.download(t_code, period="1d", progress=False)
-            if not temp_df.empty:
-                current_price = float(temp_df['Close'].iloc[-1])
-                qty = info['qty'] if isinstance(info, dict) else 1.0
-                stock_market_value = current_price * qty * 1000
-                
-                if stock_market_value > 0:
-                    labels.append(f"{active_list.get(t_code, t_code)}")
-                    values.append(stock_market_value)
-        except:
-            continue
+with col_chart:
+    # 右側：放置圓餅圖
+    if active_costs and total_value > 0:
+        labels = []
+        values = []
+        for t_code, info in active_costs.items():
+            try:
+                # 這裡假設你在前面已經算好了各股的 market_value，存入一個 dict 會更省效能
+                # 暫時沿用你的計算邏輯
+                temp_df = yf.download(t_code, period="1d", progress=False)
+                if not temp_df.empty:
+                    c_price = float(temp_df['Close'].iloc[-1])
+                    q = info['qty'] if isinstance(info, dict) else 1.0
+                    val = c_price * q * 1000
+                    if val > 0:
+                        labels.append(active_list.get(t_code, t_code))
+                        values.append(val)
+            except: continue
 
-    # 2. 繪製 Plotly 圓餅圖
-    if values:
-        fig_pie = go.Figure(data=[go.Pie(
-            labels=labels, 
-            values=values, 
-            hole=.4, # 這裡做成環狀圖比較好看
-            textinfo='label+percent',
-            marker=dict(line=dict(color='#000000', width=2))
-        )])
-        
-        fig_pie.update_layout(
-            title_text="💰 目前資產配置比例",
-            template="plotly_dark",
-            height=400,
-            margin=dict(t=50, b=20, l=20, r=20),
-            showlegend=False # 標籤已在圖上，隱藏側邊圖例讓畫面更乾淨
-        )
-        
-        # 3. 顯示圖表
-        st.plotly_chart(fig_pie, use_container_width=True)
-        
-        # --- 小鐵的人性化提醒 ---
-        max_idx = values.index(max(values))
-        max_stock = labels[max_idx]
-        max_pct = (values[max_idx] / sum(values)) * 100
-        
-        if max_pct > 50:
-            st.warning(f"⚠️ **小鐵提醒**：您的投資過於集中在 **{max_stock}** (佔比 {max_pct:.1f}%)，記得注意單一個股波動風險喔！")
-        else:
-            st.info(f"✅ **小鐵點評**：目前的資產分佈相對健康，最大持股為 **{max_stock}**。")
+        if values:
+            fig_pie = go.Figure(data=[go.Pie(
+                labels=labels, 
+                values=values, 
+                hole=.5,
+                textinfo='percent',
+                marker=dict(line=dict(color='#1e1e1e', width=2))
+            )])
+            fig_pie.update_layout(
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+                template="plotly_dark",
+                margin=dict(t=10, b=10, l=10, r=10),
+                height=380,
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
 
+# 顯示下方的智慧點評 (跨欄顯示)
+if 'values' in locals() and values:
+    max_idx = values.index(max(values))
+    max_stock = labels[max_idx]
+    max_pct = (values[max_idx] / sum(values)) * 100
+    
+    if max_pct > 50:
+        st.warning(f"⚠️ **小鐵提醒**：您的資金高度集中在 **{max_stock}** ({max_pct:.1f}%)。若該股波動較大，將顯著影響總資產水位。")
+    else:
+        st.info(f"✅ **小鐵點評**：資產配置比例健康。目前以 **{max_stock}** 為核心持股。")
 # 側邊欄：功能按鈕區
 st.sidebar.subheader("⚙️ 庫存管理")
 if st.sidebar.button("➕ 新增股票項目", use_container_width=True): add_stock_dialog() 
@@ -740,6 +744,7 @@ if show_news and ticker_input:
                     st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
         else: st.info("⚠️ 近期暫無相關新聞。")
     except: pass
+
 
 
 
