@@ -354,7 +354,7 @@ with col_summary:
     # 左側：放置原本的大數據指標，改為垂直堆疊
     watermark_content = "💰" 
  
-    st.markdown(f"""
+    summary_html = f"""
         <div style="
             background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%); 
             padding: 25px; 
@@ -376,24 +376,28 @@ with col_summary:
                 color: rgba(255, 255, 255, 0.05);
                 transform: rotate(-15deg);
                 pointer-events: none;
+                z-index: 0;
             ">
                 {watermark_content}
             </div>
 
             <div style="position: relative; z-index: 1;">
                 <p style="color: #888; margin: 0; font-size: 14px;">資產總市值</p>
-                <h2 style="color: white; margin: 0; font-size: 26px;">NT$ {int(total_value):,}</h2>
+                <h2 style="color: white; margin: 0; font-size: 26px; font-family: sans-serif;">NT$ {int(total_value):,}</h2>
             </div>
+            
             <div style="position: relative; z-index: 1; border-top: 1px solid rgba(255,255,255,0.1); border-bottom: 1px solid rgba(255,255,255,0.1); padding: 15px 0;">
                 <p style="color: #888; margin: 0; font-size: 14px;">預估總損益</p>
-                <h1 style="color: {p_color}; margin: 0; font-size: 34px;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
+                <h1 style="color: {p_color}; margin: 0; font-size: 34px; font-family: sans-serif;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
             </div>
+            
             <div style="position: relative; z-index: 1;">
                 <p style="color: #888; margin: 0; font-size: 14px;">總報酬率</p>
-                <h2 style="color: {p_color}; margin: 0; font-size: 26px;">{roi:.2f}%</h2>
+                <h2 style="color: {p_color}; margin: 0; font-size: 26px; font-family: sans-serif;">{roi:.2f}%</h2>
             </div>
         </div>
-    """, unsafe_allow_html=True)
+    """
+    st.markdown(summary_html, unsafe_allow_html=True)
     
 with col_chart:
     # 右側：放置圓餅圖
@@ -770,6 +774,7 @@ if show_news and ticker_input:
                     st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
         else: st.info("⚠️ 近期暫無相關新聞。")
     except: pass
+
 
 
 
