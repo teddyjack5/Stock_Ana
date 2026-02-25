@@ -353,7 +353,7 @@ col_summary, col_chart = st.columns([3.0, 7.0])
 with col_summary:
     # 左側：放置原本的大數據指標，改為垂直堆疊
     watermark_content = "💰" 
-    
+ 
     st.markdown(f"""
         <div style="
             background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%); 
@@ -365,36 +365,36 @@ with col_summary:
             flex-direction: column; 
             justify-content: space-around; 
             box-shadow: 4px 4px 15px rgba(0,0,0,0.5);
-            position: relative; /* 必備：讓浮水印定位在框框內 */
-            overflow: hidden;    /* 必備：防止浮水印超出邊框 */
+            position: relative;
+            overflow: hidden;
         ">
             <div style="
                 position: absolute;
                 bottom: -10px;
                 right: -10px;
                 font-size: 100px;
-                color: rgba(255, 255, 255, 0.05); /* 超低透明度，只有 5% */
+                color: rgba(255, 255, 255, 0.05);
                 transform: rotate(-15deg);
-                pointer-events: none; /* 讓滑鼠可以穿透，不影響點擊 */
-                font-family: Arial;
+                pointer-events: none;
             ">
                 {watermark_content}
             </div>
 
-            <div style="position: relative; z-index: 1; text-align: left;">
+            <div style="position: relative; z-index: 1;">
                 <p style="color: #888; margin: 0; font-size: 14px;">資產總市值</p>
-                <h2 style="color: white; margin: 0; font-size: 26px; font-family: 'Courier New';">NT$ {int(total_value):,}</h2>
+                <h2 style="color: white; margin: 0; font-size: 26px;">NT$ {int(total_value):,}</h2>
             </div>
-            <div style="position: relative; z-index: 1; text-align: left; border-top: 1px solid rgba(255,255,255,0.1); border-bottom: 1px solid rgba(255,255,255,0.1); padding: 15px 0;">
+            <div style="position: relative; z-index: 1; border-top: 1px solid rgba(255,255,255,0.1); border-bottom: 1px solid rgba(255,255,255,0.1); padding: 15px 0;">
                 <p style="color: #888; margin: 0; font-size: 14px;">預估總損益</p>
                 <h1 style="color: {p_color}; margin: 0; font-size: 34px;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
             </div>
-            <div style="position: relative; z-index: 1; text-align: left;">
+            <div style="position: relative; z-index: 1;">
                 <p style="color: #888; margin: 0; font-size: 14px;">總報酬率</p>
                 <h2 style="color: {p_color}; margin: 0; font-size: 26px;">{roi:.2f}%</h2>
             </div>
         </div>
     """, unsafe_allow_html=True)
+    
 with col_chart:
     # 右側：放置圓餅圖
     if active_costs and total_value > 0:
@@ -770,6 +770,7 @@ if show_news and ticker_input:
                     st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
         else: st.info("⚠️ 近期暫無相關新聞。")
     except: pass
+
 
 
 
