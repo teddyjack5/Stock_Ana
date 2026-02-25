@@ -351,61 +351,32 @@ st.write("### 🏢 小鐵的雲端投資組合")
 col_summary, col_chart = st.columns([3.0, 7.0])
 
 with col_summary:
-    # 1. 先定義純 HTML 範本 (裡面用 @@變數@@ 當預留位置，避開所有 Python 語法衝突)
-    html_template = """
-    <div style="
-        background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%); 
-        padding: 25px; 
-        border-radius: 20px; 
-        border-left: 10px solid CARD_COLOR; 
-        min-height: 350px; 
-        display: flex; 
-        flex-direction: column; 
-        justify-content: space-around; 
-        box-shadow: 4px 4px 15px rgba(0,0,0,0.5);
-        position: relative;
-        overflow: hidden;
-    ">
+    # 回歸最簡潔的 HTML 結構，不使用複雜的 CSS 屬性
+    st.markdown(f"""
         <div style="
-            position: absolute;
-            bottom: -10px;
-            right: -10px;
-            font-size: 100px;
-            color: rgba(255, 255, 255, 0.05);
-            transform: rotate(-15deg);
-            pointer-events: none;
-            z-index: 0;
+            background-color: #1e1e1e; 
+            padding: 20px; 
+            border-radius: 15px; 
+            border-left: 10px solid {p_color}; 
+            height: 350px; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: space-around;
         ">
-            💰
+            <div>
+                <p style="color: gray; margin: 0; font-size: 14px;">資產總市值</p>
+                <h2 style="color: white; margin: 0; font-size: 24px;">NT$ {int(total_value):,}</h2>
+            </div>
+            <div style="border-top: 1px solid #444; border-bottom: 1px solid #444; padding: 15px 0;">
+                <p style="color: gray; margin: 0; font-size: 14px;">預估總損益</p>
+                <h1 style="color: {p_color}; margin: 0; font-size: 32px;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
+            </div>
+            <div>
+                <p style="color: gray; margin: 0; font-size: 14px;">總報酬率</p>
+                <h2 style="color: {p_color}; margin: 0; font-size: 24px;">{roi:.2f}%</h2>
+            </div>
         </div>
-
-        <div style="position: relative; z-index: 1;">
-            <p style="color: #888; margin: 0; font-size: 14px;">資產總市值</p>
-            <h2 style="color: white; margin: 0; font-size: 26px; font-family: sans-serif;">NT$ VAL_TOTAL</h2>
-        </div>
-        
-        <div style="position: relative; z-index: 1; border-top: 1px solid rgba(255,255,255,0.1); border-bottom: 1px solid rgba(255,255,255,0.1); padding: 15px 0;">
-            <p style="color: #888; margin: 0; font-size: 14px;">預估總損益</p>
-            <h1 style="color: CARD_COLOR; margin: 0; font-size: 34px; font-family: sans-serif;">VAL_PROFIT</h1>
-        </div>
-        
-        <div style="position: relative; z-index: 1;">
-            <p style="color: #888; margin: 0; font-size: 14px;">總報酬率</p>
-            <h2 style="color: CARD_COLOR; margin: 0; font-size: 26px; font-family: sans-serif;">VAL_ROI%</h2>
-        </div>
-    </div>
-    """
-
-    # 2. 手動替換變數內容 (保證不被 Python 解析器干擾)
-    final_html = html_template.replace("CARD_COLOR", str(p_color))
-    final_html = final_html.replace("VAL_TOTAL", f"{int(total_value):,}")
-    
-    profit_str = f"{'+' if profit > 0 else ''}{int(profit):,}"
-    final_html = final_html.replace("VAL_PROFIT", profit_str)
-    final_html = final_html.replace("VAL_ROI", f"{roi:.2f}")
-
-    # 3. 渲染
-    st.markdown(final_html, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
     
 with col_chart:
     # 右側：放置圓餅圖
@@ -782,6 +753,7 @@ if show_news and ticker_input:
                     st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
         else: st.info("⚠️ 近期暫無相關新聞。")
     except: pass
+
 
 
 
