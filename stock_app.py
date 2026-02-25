@@ -360,6 +360,57 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
+if active_costs and total_value > 0:
+    # 1. 準備圓餅圖數據
+    labels = []
+    values = []
+    for t_code, info in active_costs.items():
+        try:
+            # 取得該股目前市價（利用剛才計算總資產時可能已有的邏輯，或重新取最後一筆價格）
+            # 這裡我們用比較保險的方式，直接從剛才計算出的 total_value 邏輯中拆分
+            temp_df = yf.download(t_code, period="1d", progress=False)
+            if not temp_df.empty:
+                current_price = float(temp_df['Close'].iloc[-1])
+                qty = info['qty'] if isinstance(info, dict) else 1.0
+                stock_market_value = current_price * qty * 1000
+                
+                if stock_market_value > 0:
+                    labels.append(f"{active_list.get(t_code, t_code)}")
+                    values.append(stock_market_value)
+        except:
+            continue
+
+    # 2. 繪製 Plotly 圓餅圖
+    if values:
+        fig_pie = go.Figure(data=[go.Pie(
+            labels=labels, 
+            values=values, 
+            hole=.4, # 這裡做成環狀圖比較好看
+            textinfo='label+percent',
+            marker=dict(line=dict(color='#000000', width=2))
+        )])
+        
+        fig_pie.update_layout(
+            title_text="💰 目前資產配置比例",
+            template="plotly_dark",
+            height=400,
+            margin=dict(t=50, b=20, l=20, r=20),
+            showlegend=False # 標籤已在圖上，隱藏側邊圖例讓畫面更乾淨
+        )
+        
+        # 3. 顯示圖表
+        st.plotly_chart(fig_pie, use_container_width=True)
+        
+        # --- 小鐵的人性化提醒 ---
+        max_idx = values.index(max(values))
+        max_stock = labels[max_idx]
+        max_pct = (values[max_idx] / sum(values)) * 100
+        
+        if max_pct > 50:
+            st.warning(f"⚠️ **小鐵提醒**：您的投資過於集中在 **{max_stock}** (佔比 {max_pct:.1f}%)，記得注意單一個股波動風險喔！")
+        else:
+            st.info(f"✅ **小鐵點評**：目前的資產分佈相對健康，最大持股為 **{max_stock}**。")
+
 # 側邊欄：功能按鈕區
 st.sidebar.subheader("⚙️ 庫存管理")
 if st.sidebar.button("➕ 新增股票項目", use_container_width=True): add_stock_dialog() 
@@ -689,6 +740,7 @@ if show_news and ticker_input:
                     st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
         else: st.info("⚠️ 近期暫無相關新聞。")
     except: pass
+
 
 
 
