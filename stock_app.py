@@ -347,11 +347,9 @@ roi = (profit / total_cost * 100) if total_cost > 0 else 0
 p_color = "#FF4B4B" if profit > 0 else ("#00B050" if profit < 0 else "#FFFFFF")
 
 st.write("### 🏢 小鐵的雲端投資組合")
-# 1. 建立左右兩欄 (比例 4:6)
 col_summary, col_chart = st.columns([3.0, 7.0])
 
 with col_summary:
-    # 回歸最簡潔的 HTML 結構，不使用複雜的 CSS 屬性
     st.markdown(f"""
         <div style="
             background-color: #1e1e1e; 
@@ -379,14 +377,11 @@ with col_summary:
     """, unsafe_allow_html=True)
     
 with col_chart:
-    # 右側：放置圓餅圖
     if active_costs and total_value > 0:
         labels = []
         values = []
         for t_code, info in active_costs.items():
             try:
-                # 這裡假設你在前面已經算好了各股的 market_value，存入一個 dict 會更省效能
-                # 暫時沿用你的計算邏輯
                 temp_df = yf.download(t_code, period="1d", progress=False)
                 if not temp_df.empty:
                     c_price = float(temp_df['Close'].iloc[-1])
@@ -401,19 +396,19 @@ with col_chart:
             fig_pie = go.Figure(data=[go.Pie(
                 labels=labels, 
                 values=values, 
-                hole=.5,
-                textinfo='percent',
+                hole=.4,
+                textinfo='label+percent', 
+                textposition='inside', # 讓文字在圓餅圖裡面
                 marker=dict(line=dict(color='#1e1e1e', width=2))
             )])
+            
             fig_pie.update_layout(
-                showlegend=True,
-                legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=1.0),
+                showlegend=False, 
                 template="plotly_dark",
-                margin=dict(t=0, b=0, l=0, r=0),
-                height=350,
+                margin=dict(t=10, b=10, l=10, r=10),
+                height=380, # 與左側高度同步
             )
             st.plotly_chart(fig_pie, use_container_width=True)
-
 # 顯示下方的智慧點評 (跨欄顯示)
 if 'values' in locals() and values:
     max_idx = values.index(max(values))
@@ -424,6 +419,7 @@ if 'values' in locals() and values:
         st.warning(f"⚠️ **小鐵提醒**：您的資金高度集中在 **{max_stock}** ({max_pct:.1f}%)。若該股波動較大，將顯著影響總資產水位。")
     else:
         st.info(f"✅ **小鐵點評**：資產配置比例健康。目前以 **{max_stock}** 為核心持股。")
+        
 # 側邊欄：功能按鈕區
 st.sidebar.subheader("⚙️ 庫存管理")
 if st.sidebar.button("➕ 新增股票項目", use_container_width=True): add_stock_dialog() 
@@ -753,6 +749,7 @@ if show_news and ticker_input:
                     st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
         else: st.info("⚠️ 近期暫無相關新聞。")
     except: pass
+
 
 
 
