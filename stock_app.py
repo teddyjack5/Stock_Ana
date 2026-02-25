@@ -348,27 +348,34 @@ p_color = "#FF4B4B" if profit > 0 else ("#00B050" if profit < 0 else "#FFFFFF")
 
 st.write("### 🏢 小鐵的雲端投資組合")
 # 1. 建立左右兩欄 (比例 4:6)
-col_summary, col_chart = st.columns([4, 6])
+col_summary, col_chart = st.columns([3.5, 6.5])
 
 with col_summary:
     # 左側：放置原本的大數據指標，改為垂直堆疊
     st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%); padding: 20px; border-radius: 15px; border-left: 10px solid {p_color}; height: 380px; display: flex; flex-direction: column; justify-content: center;">
-            <div style="margin-bottom: 20px;">
-                <p style="color: gray; margin: 0; font-size: 14px;">資產總市值</p>
-                <h2 style="color: white; margin: 0; font-size: 28px;">NT$ {int(total_value):,}</h2>
+        <div style="background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%); 
+                    padding: 25px; 
+                    border-radius: 20px; 
+                    border-left: 10px solid {p_color}; 
+                    min-height: 350px; 
+                    display: flex; 
+                    flex-direction: column; 
+                    justify-content: space-around; 
+                    box-shadow: 2px 2px 10px rgba(0,0,0,0.5);">
+            <div style="text-align: left;">
+                <p style="color: #888; margin: 0; font-size: 14px;">資產總市值</p>
+                <h2 style="color: white; margin: 0; font-size: 26px; font-family: 'Courier New';">NT$ {int(total_value):,}</h2>
             </div>
-            <div style="margin-bottom: 20px;">
-                <p style="color: gray; margin: 0; font-size: 14px;">預估總損益</p>
-                <h1 style="color: {p_color}; margin: 0; font-size: 36px;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
+            <div style="text-align: left; border-top: 1px solid #444; border-bottom: 1px solid #444; padding: 15px 0;">
+                <p style="color: #888; margin: 0; font-size: 14px;">預估總損益</p>
+                <h1 style="color: {p_color}; margin: 0; font-size: 34px;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
             </div>
-            <div>
-                <p style="color: gray; margin: 0; font-size: 14px;">總報酬率</p>
-                <h2 style="color: {p_color}; margin: 0; font-size: 28px;">{roi:.2f}%</h2>
+            <div style="text-align: left;">
+                <p style="color: #888; margin: 0; font-size: 14px;">總報酬率</p>
+                <h2 style="color: {p_color}; margin: 0; font-size: 26px;">{roi:.2f}%</h2>
             </div>
         </div>
     """, unsafe_allow_html=True)
-
 with col_chart:
     # 右側：放置圓餅圖
     if active_costs and total_value > 0:
@@ -398,10 +405,10 @@ with col_chart:
             )])
             fig_pie.update_layout(
                 showlegend=True,
-                legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=1.0),
                 template="plotly_dark",
-                margin=dict(t=10, b=10, l=10, r=10),
-                height=380,
+                margin=dict(t=0, b=0, l=0, r=0),
+                height=350,
             )
             st.plotly_chart(fig_pie, use_container_width=True)
 
@@ -744,6 +751,7 @@ if show_news and ticker_input:
                     st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
         else: st.info("⚠️ 近期暫無相關新聞。")
     except: pass
+
 
 
 
