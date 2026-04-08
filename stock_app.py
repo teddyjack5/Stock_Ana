@@ -86,14 +86,27 @@ def show_full_portfolio_report(active_costs, active_list):
             except: continue
 
     if report_data:
-        df_report = pd.DataFrame(report_data)
-        st.dataframe(
-            df_report.style.applymap(lambda v: f'color: {"red" if v > 0 else "green" if v < 0 else "white"}', subset=['損益']),
-            use_container_width=True, hide_index=True
-        )
-        total_p = sum(d['損益'] for d in report_data)
-        st.divider()
-        st.metric("合計預估總損益", f"NT$ {total_p:,}", delta=f"{total_p:,}")
+    df_report = pd.DataFrame(report_data)
+
+    def color_pnl_custom(v):
+        try:
+            val = float(v)
+            if val > 0: return 'color: #FF4B4B' # 紅色
+            if val < 0: return 'color: #00B050' # 綠色
+        except (ValueError, TypeError):
+            pass
+        return 'color: white'
+
+    st.dataframe(
+        df_report.style.map(color_pnl_custom, subset=['損益']), # 這裡改用 .map
+        use_container_width=True, 
+        hide_index=True
+    )
+    
+    # 計算合計時也要防呆，避免字串相加
+    total_p = sum(pd.to_numeric(df_report['損益'], errors='coerce').fillna(0))
+    st.divider()
+    st.metric("合計預估總損益", f"NT$ {int(total_p):,}", delta=f"{int(total_p):,}")
 
 # 2. 新增庫存股票
 @st.dialog("➕ 新增股票至清單")
