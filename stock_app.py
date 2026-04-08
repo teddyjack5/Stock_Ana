@@ -333,14 +333,22 @@ if active_costs:
     with st.spinner("計算總資產中..."):
         for t_code, info in active_costs.items():
             try:
-                temp_df = yf.download(t_code, period="1d", progress=False)
+                # 建議加上 interval="1m" 獲取最即時價格
+                temp_df = yf.download(t_code, period="1d", interval="1m", progress=False)
                 if not temp_df.empty:
-                    c_price = temp_df['Close'].iloc[-1]
-                    c = info['cost'] if isinstance(info, dict) else info
-                    q = info['qty'] if isinstance(info, dict) else 1.0
+                    # 處理 MultiIndex 問題
+                    if isinstance(temp_df.columns, pd.MultiIndex):
+                        temp_df.columns = temp_df.columns.get_level_values(0)
+                    
+                    c_price = float(temp_df['Close'].dropna().iloc[-1])
+                    c = float(info['cost']) if isinstance(info, dict) else float(info)
+                    q = float(info['qty']) if isinstance(info, dict) else 0.0
+                    
                     total_cost += c * q * 1000
-                    total_value += float(c_price) * q * 1000
-            except: continue
+                    total_value += c_price * q * 1000
+            except Exception as e:
+                print(f"Error calculating {t_code}: {e}")
+                continue
 
 profit = total_value - total_cost
 roi = (profit / total_cost * 100) if total_cost > 0 else 0
