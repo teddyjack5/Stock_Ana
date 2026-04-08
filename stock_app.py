@@ -86,7 +86,7 @@ def show_full_portfolio_report(active_costs, active_list):
             except: continue
 
     if report_data:
-    df_report = pd.DataFrame(report_data)
+        df_report = pd.DataFrame(report_data)
 
     def color_pnl_custom(v):
         try:
