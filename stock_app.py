@@ -454,22 +454,23 @@ if col_pnl2.button("📊 查看報表", use_container_width=True): show_annual_r
 st.sidebar.write("---")
 ticker_options = sorted(list(active_list.keys()))
 
+if 'selected_ticker' not in st.session_state:
+    st.session_state.selected_ticker = ticker_options[0] if ticker_options else ""
 
-if 'selected_ticker' not in st.session_state or st.session_state.selected_ticker not in ticker_options:
-    st.session_state.selected_ticker = ticker_options[0] if ticker_options else None
 try:
     current_index = ticker_options.index(st.session_state.selected_ticker)
-except ValueError:
+except (ValueError, KeyError):
     current_index = 0
-selected_ticker = st.sidebar.selectbox(
-    "選取庫存個股", 
-    ticker_options, 
-    index=current_index, 
+new_selection = st.sidebar.selectbox(
+    "選取庫存個股",
+    options=ticker_options,
+    index=current_index,
     format_func=lambda x: f"{x} {active_list.get(x, '')}",
-    key="selected_ticker_widget" # 使用獨立的 Widget Key
+    key="ticker_selector_widget"  # 使用新的 Key 避免與舊狀態衝突
 )
+st.session_state.selected_ticker = new_selection
 
-st.session_state.selected_ticker = selected_ticker
+ticker_input = st.session_state.selected_ticker
 
 if selected_ticker:
     if st.sidebar.button(f"🗑️ 刪除 {selected_ticker}", use_container_width=True):
