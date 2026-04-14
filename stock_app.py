@@ -461,16 +461,17 @@ try:
     current_index = ticker_options.index(st.session_state.selected_ticker)
 except (ValueError, KeyError):
     current_index = 0
-new_selection = st.sidebar.selectbox(
+
+selected_ticker = st.sidebar.selectbox(
     "選取庫存個股",
     options=ticker_options,
     index=current_index,
     format_func=lambda x: f"{x} {active_list.get(x, '')}",
-    key="ticker_selector_widget"  # 使用新的 Key 避免與舊狀態衝突
+    key="ticker_selector_widget" 
 )
-st.session_state.selected_ticker = new_selection
 
-ticker_input = st.session_state.selected_ticker
+st.session_state.selected_ticker = selected_ticker
+ticker_input = selected_ticker
 
 if selected_ticker:
     if st.sidebar.button(f"🗑️ 刪除 {selected_ticker}", use_container_width=True):
