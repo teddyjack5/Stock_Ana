@@ -560,10 +560,12 @@ if ticker_input:
             q = info['qty'] if isinstance(info, dict) else 1.0
             pft = (price * q * 1000) - (c * q * 1000)
             pft_r = (pft / (c * q * 1000)) * 100 if c > 0 else 0
-            i1, i2, i3 = st.columns(3)
+            i0, i1, i2, i3 = st.columns(4) 
             p_clr = "#FF4B4B" if pft > 0 else "#00B050"
+            i0.metric("買入均價", f"{c:.2f}")
             i1.markdown(f"**預估損益 (報酬率)** \n<span style='color:{p_clr}; font-size:24px; font-weight:bold;'>{int(pft):,} ({pft_r:.2f}%)</span>", unsafe_allow_html=True)
-            i2.metric("投入本金", f"NT$ {int(c*q*1000):,}"); i3.metric("目前市值", f"NT$ {int(price*q*1000):,}")
+            i2.metric("投入本金", f"NT$ {int(c*q*1000):,}")
+            i3.metric("目前市值", f"NT$ {int(price*q*1000):,}")
 
         # 2. 個股即時概況指標
         st.subheader(f"📊 {ticker_input} {active_list.get(ticker_input, '')} 即時概況")
