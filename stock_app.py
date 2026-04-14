@@ -452,22 +452,23 @@ if col_pnl1.button("💰 紀錄賣出", use_container_width=True): record_sale_d
 if col_pnl2.button("📊 查看報表", use_container_width=True): show_annual_report_dialog()
 
 st.sidebar.write("---")
-ticker_options = list(active_list.keys())
+ticker_options = sorted(list(active_list.keys()))
 
-# 下拉選單處理
-def update_ticker_state(): st.session_state.selected_ticker = st.session_state.temp_ticker
 
-if 'selected_ticker' in st.session_state and st.session_state.selected_ticker in ticker_options:
-    st.session_state.temp_ticker = st.session_state.selected_ticker
-
-default_index = 0
-if st.session_state.selected_ticker in ticker_options:
-    default_index = ticker_options.index(st.session_state.selected_ticker)
-
+if 'selected_ticker' not in st.session_state or st.session_state.selected_ticker not in ticker_options:
+    st.session_state.selected_ticker = ticker_options[0] if ticker_options else None
+try:
+    current_index = ticker_options.index(st.session_state.selected_ticker)
+except ValueError:
+    current_index = 0
 selected_ticker = st.sidebar.selectbox(
-    "選取庫存個股", ticker_options, index=default_index, key="temp_ticker",        
-    on_change=update_ticker_state, format_func=lambda x: f"{x} {active_list.get(x, '')}"
+    "選取庫存個股", 
+    ticker_options, 
+    index=current_index, 
+    format_func=lambda x: f"{x} {active_list.get(x, '')}",
+    key="selected_ticker_widget" # 使用獨立的 Widget Key
 )
+
 st.session_state.selected_ticker = selected_ticker
 
 if selected_ticker:
