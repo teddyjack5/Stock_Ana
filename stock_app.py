@@ -87,6 +87,7 @@ def show_full_portfolio_report(active_costs, active_list):
 
     if report_data:
         df_report = pd.DataFrame(report_data)
+        df_report['報酬率'] = pd.to_numeric(df_report['報酬率'].astype(str).str.replace('%', ''), errors='coerce')
         df_report = df_report.sort_values(by='報酬率', ascending=False)
 
     def color_pnl_custom(v):
@@ -99,7 +100,12 @@ def show_full_portfolio_report(active_costs, active_list):
         return 'color: white'
         
     st.dataframe(
-        df_report.style.map(color_pnl_custom, subset=['損益']), # 這裡改用 .map
+        df_report.style.map(color_pnl_custom, subset=['損益', '報酬率']), 
+        column_config={
+            "報酬率": st.column_config.NumberColumn(format="%.2f%%"), # 自動補上 % 顯示
+            "成本價": st.column_config.NumberColumn(format="%.2f"),
+            "現價": st.column_config.NumberColumn(format="%.2f"),
+        },
         use_container_width=True, 
         hide_index=True
     )
