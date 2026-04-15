@@ -342,27 +342,46 @@ with st.sidebar.expander("⚙️ 進階設定"):
 active_list = st.session_state.db["list"]
 active_costs = st.session_state.db["costs"]
 total_cost, total_value = 0.0, 0.0
+
+# 用來存放計算結果，避免重複下載
+processed_data = []
+
 if active_costs:
-    with st.spinner("計算總資產中..."):
+    with st.spinner("正在同步雲端數據並計算總資產..."):
         for t_code, info in active_costs.items():
             try:
-                # 建議加上 interval="1m" 獲取最即時價格
-                temp_df = yf.download(t_code, period="1d", interval="1m", progress=False)
+                # 統一使用 period="1d" 抓取現價
+                temp_df = yf.download(t_code, period="1d", progress=False)
                 if not temp_df.empty:
-                    # 處理 MultiIndex 問題
+                    # 處理 yfinance 可能產生的 MultiIndex
                     if isinstance(temp_df.columns, pd.MultiIndex):
                         temp_df.columns = temp_df.columns.get_level_values(0)
                     
+                    # 確保抓到的是最後一個有效的收盤價數字
                     c_price = float(temp_df['Close'].dropna().iloc[-1])
+                    
+                    # 處理庫存資料格式
                     c = float(info['cost']) if isinstance(info, dict) else float(info)
                     q = float(info['qty']) if isinstance(info, dict) else 0.0
                     
-                    total_cost += c * q * 1000
-                    total_value += c_price * q * 1000
+                    # 計算各標市值
+                    current_market_val = c_price * q * 1000
+                    
+                    # 累加總額
+                    total_cost += (c * q * 1000)
+                    total_value += current_market_val
+                    
+                    # 存入列表供下方圓餅圖使用
+                    if current_market_val > 0:
+                        processed_data.append({
+                            "label": active_list.get(t_code, t_code),
+                            "value": current_market_val
+                        })
             except Exception as e:
-                print(f"Error calculating {t_code}: {e}")
+                st.error(f"標的 {t_code} 數據解析錯誤: {e}")
                 continue
 
+# 計算損益
 profit = total_value - total_cost
 roi = (profit / total_cost * 100) if total_cost > 0 else 0
 p_color = "#FF4B4B" if profit > 0 else ("#00B050" if profit < 0 else "#FFFFFF")
@@ -373,14 +392,9 @@ col_summary, col_chart = st.columns([3.0, 7.0])
 with col_summary:
     st.markdown(f"""
         <div style="
-            background-color: #1e1e1e; 
-            padding: 20px; 
-            border-radius: 15px; 
-            border-left: 10px solid {p_color}; 
-            height: 350px; 
-            display: flex; 
-            flex-direction: column; 
-            justify-content: space-around;
+            background-color: #1e1e1e; padding: 20px; border-radius: 15px; 
+            border-left: 10px solid {p_color}; height: 350px; 
+            display: flex; flex-direction: column; justify-content: space-around;
         ">
             <div>
                 <p style="color: gray; margin: 0; font-size: 14px;">資產總市值</p>
@@ -396,40 +410,28 @@ with col_summary:
             </div>
         </div>
     """, unsafe_allow_html=True)
-    
-with col_chart:
-    if active_costs and total_value > 0:
-        labels = []
-        values = []
-        for t_code, info in active_costs.items():
-            try:
-                temp_df = yf.download(t_code, period="1d", progress=False)
-                if not temp_df.empty:
-                    c_price = float(temp_df['Close'].iloc[-1])
-                    q = info['qty'] if isinstance(info, dict) else 1.0
-                    val = c_price * q * 1000
-                    if val > 0:
-                        labels.append(active_list.get(t_code, t_code))
-                        values.append(val)
-            except: continue
 
-        if values:
-            fig_pie = go.Figure(data=[go.Pie(
-                labels=labels, 
-                values=values, 
-                hole=.4,
-                textinfo='label+percent', 
-                textposition='inside', # 讓文字在圓餅圖裡面
-                marker=dict(line=dict(color='#1e1e1e', width=2))
-            )])
-            
-            fig_pie.update_layout(
-                showlegend=False, 
-                template="plotly_dark",
-                margin=dict(t=10, b=10, l=10, r=10),
-                height=380, # 與左側高度同步
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
+with col_chart:
+    if processed_data:
+        labels = [d['label'] for d in processed_data]
+        values = [d['value'] for d in processed_data]
+        
+        fig_pie = go.Figure(data=[go.Pie(
+            labels=labels, 
+            values=values, 
+            hole=.4,
+            textinfo='label+percent', 
+            textposition='inside',
+            marker=dict(line=dict(color='#1e1e1e', width=2))
+        )])
+        
+        fig_pie.update_layout(
+            showlegend=False, 
+            template="plotly_dark",
+            margin=dict(t=10, b=10, l=10, r=10),
+            height=380,
+        )
+        st.plotly_chart(fig_pie, use_container_width=True)
 # 顯示下方的智慧點評 (跨欄顯示)
 if 'values' in locals() and values:
     max_idx = values.index(max(values))
