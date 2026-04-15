@@ -97,21 +97,7 @@ def show_full_portfolio_report(active_costs, active_list):
         except (ValueError, TypeError):
             pass
         return 'color: white'
-
-    st.dataframe(
-            df_report.style.map(color_pnl_custom, subset=['損益', '報酬率']),
-            column_config={
-                "成本價": st.column_config.NumberColumn(format="%.2f"),
-                "現價": st.column_config.NumberColumn(format="%.2f"),
-                "投入本金": st.column_config.NumberColumn(format="NT$ %d"),
-                "目前市值": st.column_config.NumberColumn(format="NT$ %d"),
-                "損益": st.column_config.NumberColumn(format="%d"),
-                "報酬率": st.column_config.NumberColumn(format="%.2f%%"), # 這裡自動補上 %
-            },
-            use_container_width=True, 
-            hide_index=True
-        )
-
+        
     st.dataframe(
         df_report.style.map(color_pnl_custom, subset=['損益']), # 這裡改用 .map
         use_container_width=True, 
