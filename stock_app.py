@@ -222,7 +222,10 @@ def show_annual_report_dialog():
         return 'color: white'
 
     st.subheader("📊 年度數據摘要")
-    st.table(summary.style.format({"年度總損益": "NT$ {:,.0f}"}).applymap(color_pnl, subset=['年度總損益']))
+    st.dataframe(
+        summary.style.format({"年度總損益": "NT$ {:,.0f}"}).map(color_pnl, subset=['年度總損益']),
+        use_container_width=True
+    )
     st.divider()
     st.subheader("📑 詳細交易紀錄")
     years = sorted(df_pnl['年份'].unique(), reverse=True)
