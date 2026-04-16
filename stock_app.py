@@ -226,10 +226,17 @@ def show_annual_report_dialog():
     st.divider()
     st.subheader("📑 詳細交易紀錄")
     years = sorted(df_pnl['年份'].unique(), reverse=True)
+    
     for y in years:
         with st.expander(f"📅 {y} 年詳細清單"):
             year_df = df_pnl[df_pnl['年份'] == y].sort_values('日期', ascending=False).copy()
-            styled_df = year_df[['日期', '代號', '名稱', '獲利', '百分比']].style.applymap(color_pnl, subset=['獲利', '百分比']).format({'日期': lambda x: x.strftime('%Y-%m-%d'), '獲利': 'NT$ {:,.0f}', '百分比': '{:+.2f}%'})
+            year_df['日期'] = year_df['日期'].dt.date
+            styled_df = year_df[['日期', '代號', '名稱', '獲利', '百分比']].style.map(
+                color_pnl, subset=['獲利', '百分比']
+            ).format({
+                '獲利': 'NT$ {:,.0f}', 
+                '百分比': '{:+.2f}%'
+            })
             st.dataframe(styled_df, hide_index=True, use_container_width=True)
 
 # 6. 策略模擬回測工具
