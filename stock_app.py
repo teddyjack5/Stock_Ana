@@ -197,14 +197,21 @@ def show_annual_report_dialog():
         return
 
     df_pnl = pd.DataFrame(pnl_data)
+    df_pnl['日期'] = pd.to_datetime(df_pnl['日期'], errors='coerce')
+    df_pnl = df_pnl.dropna(subset=['日期'])
     try:
-        df_pnl['日期'] = pd.to_datetime(df_pnl['日期'], utc=True).dt.tz_convert('Asia/Taipei')
+        if df_pnl['日期'].dt.tz is None:
+            df_pnl['日期'] = df_pnl['日期'].dt.tz_localize('UTC').dt.tz_convert('Asia/Taipei')
+        else:
+            df_pnl['日期'] = df_pnl['日期'].dt.tz_convert('Asia/Taipei')
+            
         df_pnl['年份'] = df_pnl['日期'].dt.year
-        df_pnl['日期'] = df_pnl['日期'].dt.date
-    except:
-        df_pnl['日期'] = pd.to_datetime(df_pnl['日期']) + pd.Timedelta(hours=8)
+        df_pnl['日期顯示'] = df_pnl['日期'].dt.date
+    except Exception as e:
+        st.warning(f"時區校準異常，切換至手動補償模式: {e}")
+        df_pnl['日期'] = df_pnl['日期'] + pd.Timedelta(hours=8)
         df_pnl['年份'] = df_pnl['日期'].dt.year
-        df_pnl['日期'] = df_pnl['日期'].dt.date
+        df_pnl['日期顯示'] = df_pnl['日期'].dt.date
     
     summary = df_pnl.groupby('年份').agg({'獲利': 'sum', '日期': 'count'}).rename(columns={'日期': '交易筆數', '獲利': '年度總損益'}).sort_index(ascending=False)
 
