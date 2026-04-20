@@ -51,9 +51,7 @@ def hash_password(password):
 # ==============================================================================
 # 第二部分：【互動對話視窗 (Dialogs)】 - UI 彈窗功能定義
 # ==============================================================================
-if st.sidebar.button("♻️ 徹底重整 (清除緩存)"):
-    st.cache_data.clear()
-    st.rerun()
+
 # 1. 顯示全帳戶損益明細
 @st.dialog("📋 全帳戶個股損益明細", width="large")
 def show_full_portfolio_report(active_costs, active_list):
@@ -377,7 +375,7 @@ if active_costs:
         for t_code, info in active_costs.items():
             try:
                 # 關鍵修正 1：使用 1m 間隔強制抓取今日最新點位
-                temp_df = yf.download(t_code, period="1d", interval="1m", progress=False)
+                temp_df = yf.download(t_code, period="5d", interval="1m", progress=False)
                 
                 if not temp_df.empty:
                     # 關鍵修正 2：處理可能的多重索引
