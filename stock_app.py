@@ -51,7 +51,9 @@ def hash_password(password):
 # ==============================================================================
 # 第二部分：【互動對話視窗 (Dialogs)】 - UI 彈窗功能定義
 # ==============================================================================
-
+if st.sidebar.button("♻️ 徹底重整 (清除緩存)"):
+    st.cache_data.clear()
+    st.rerun()
 # 1. 顯示全帳戶損益明細
 @st.dialog("📋 全帳戶個股損益明細", width="large")
 def show_full_portfolio_report(active_costs, active_list):
