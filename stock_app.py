@@ -567,24 +567,27 @@ def get_monthly_revenue(stock_id):
 # 第五部分：【視覺化報表與 AI 評等】 - 主畫面圖表渲染
 # ==============================================================================
 if ticker_input:
-    # 這裡建議加入 interval="1m" 確保穿透週一早盤的延遲
-    data = yf.download(ticker_input, period=period, interval="1m" if period=="1d" else "1d")
+    # 1. 穿透強化：針對短時間範圍，多抓一天 (2d) 確保今天一定在裡面
+    f_period = "2d" if period == "1d" else period
+    f_interval = "1m" if period in ["1d", "5d"] else "1d"
+    
+    data = yf.download(ticker_input, period=f_period, interval=f_interval, progress=False)
     
     if not data.empty:
-        # 1. 核心修正：處理 yfinance 的多重索引 (必須在讀取欄位前執行)
+        # 處理多重索引
         if isinstance(data.columns, pd.MultiIndex): 
             data.columns = data.columns.get_level_values(0)
             
-        # 2. 核心修正：強制轉換型態並處理縮排
+        # 強制轉換型態
         for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
             if col in data.columns:
-                # 這裡要縮排兩次，因為它在 if 裡面，if 又在 for 裡面
                 data[col] = pd.to_numeric(data[col], errors='coerce')
         
-        # 3. 清理掉 NaN 值，避免指標計算（如 RSI）出錯
+        # 2. 關鍵修正：使用 ffill() 填充盤中 NaN
+        data = data.ffill() 
         data = data.dropna(subset=['Close'])
 
-        # --- 開始指標計算 ---
+        # --- 開始指標計算 (保持不變) ---
         data['MACD'], data['Signal'], data['Hist'] = calculate_macd(data)
         data['ATR'] = calculate_atr(data)
         data['RSI'] = calculate_rsi(data)
@@ -593,15 +596,18 @@ if ticker_input:
         data['MA60'] = data['Close'].rolling(60).mean()
         data['ATR_Trailing'] = data['Close'].rolling(20).max() - (data['ATR'] * 2)
         
-        # 取得最新與前一筆資料
-        curr, prev = data.iloc[-1], data.iloc[-2]
+        # 3. 取得資料 (SIT 防錯：確保 data 至少有兩筆才能算 delta)
+        curr = data.iloc[-1]
+        prev = data.iloc[-2] if len(data) > 1 else curr
         price = float(curr['Close'])
 
-        # 1. 顯示該股目前的持倉損益
+        # 這裡加一個 Debug 檢查點 (正式跑順後可以註解掉)
+        # st.sidebar.write(f"數據最後更新: {data.index[-1]}")
+
+        # 1. 顯示該股目前的持倉損益 (這部分你的邏輯是正確的)
         if ticker_input in active_costs:
             st.write("---")
             info = active_costs[ticker_input]
-            # 防呆處理：相容 dict 格式與純數值格式
             c = float(info['cost']) if isinstance(info, dict) else float(info)
             q = float(info['qty']) if isinstance(info, dict) else 1.0
             
@@ -615,7 +621,7 @@ if ticker_input:
             i2.metric("投入本金", f"NT$ {int(c*q*1000):,}")
             i3.metric("目前市值", f"NT$ {int(price*q*1000):,}")
 
-        # 2. 個股即時概況指標
+        # 2. 個股即時概況指標 (這部分也 OK)
         st.subheader(f"📊 {ticker_input} {active_list.get(ticker_input, '')} 即時概況")
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         m1.metric("當前股價", f"{price:.2f}", f"{price - float(prev['Close']):.2f}", delta_color="inverse")
