@@ -568,7 +568,7 @@ def get_monthly_revenue(stock_id):
 # ==============================================================================
 if ticker_input:
     # 這裡建議加入 interval="1m" 確保穿透週一早盤的延遲
-    data = yf.download(ticker_input, period=period, interval="1m" if period=="2d" else "2d")
+    data = yf.download(ticker_input, period=period, interval="1m" if period=="1d" else "1d")
     
     if not data.empty:
         # 1. 核心修正：處理 yfinance 的多重索引 (必須在讀取欄位前執行)
