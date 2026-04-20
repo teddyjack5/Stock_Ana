@@ -567,71 +567,63 @@ def get_monthly_revenue(stock_id):
 # 第五部分：【視覺化報表與 AI 評等】 - 主畫面圖表渲染
 # ==============================================================================
 if ticker_input:
-    # 決定抓取頻率
-    period = st.radio("時間範圍", ["1d", "5d", "1mo", "6mo"], horizontal=True)
-    f_interval = "1m" if period in ["1d", "5d"] else "1d"
-    f_period = "2d" if period == "1d" else period
-
-    data = yf.download(ticker_input, period=f_period, interval=f_interval, progress=False)
+    # 這裡建議加入 interval="1m" 確保穿透週一早盤的延遲
+    data = yf.download(ticker_input, period=period, interval="1m" if period=="2d" else "2d")
     
     if not data.empty:
-        # 索引扁平化
+        # 1. 核心修正：處理 yfinance 的多重索引 (必須在讀取欄位前執行)
         if isinstance(data.columns, pd.MultiIndex): 
             data.columns = data.columns.get_level_values(0)
             
-        # 型態強制轉換
+        # 2. 核心修正：強制轉換型態並處理縮排
         for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
             if col in data.columns:
+                # 這裡要縮排兩次，因為它在 if 裡面，if 又在 for 裡面
                 data[col] = pd.to_numeric(data[col], errors='coerce')
         
-        # 關鍵：前值填充，確保盤中數據不因 NaN 被刪除
-        data = data.ffill().dropna(subset=['Close'])
+        # 3. 清理掉 NaN 值，避免指標計算（如 RSI）出錯
+        data = data.dropna(subset=['Close'])
 
-        # 指標計算
+        # --- 開始指標計算 ---
         data['MACD'], data['Signal'], data['Hist'] = calculate_macd(data)
         data['ATR'] = calculate_atr(data)
         data['RSI'] = calculate_rsi(data)
         data['MA5'] = data['Close'].rolling(5).mean()
         data['MA20'] = data['Close'].rolling(20).mean()
         data['MA60'] = data['Close'].rolling(60).mean()
+        data['ATR_Trailing'] = data['Close'].rolling(20).max() - (data['ATR'] * 2)
         
-        curr = data.iloc[-1]
-        prev = data.iloc[-2] if len(data) > 1 else curr
+        # 取得最新與前一筆資料
+        curr, prev = data.iloc[-1], data.iloc[-2]
         price = float(curr['Close'])
 
-        # 顯示該股持倉損益
+        # 1. 顯示該股目前的持倉損益
         if ticker_input in active_costs:
-            st.info(f"💡 目前持有: {active_list[ticker_input]}")
+            st.write("---")
             info = active_costs[ticker_input]
+            # 防呆處理：相容 dict 格式與純數值格式
             c = float(info['cost']) if isinstance(info, dict) else float(info)
             q = float(info['qty']) if isinstance(info, dict) else 1.0
+            
             pft = (price * q * 1000) - (c * q * 1000)
             pft_r = (pft / (c * q * 1000)) * 100 if c > 0 else 0
             
-            i0, i1, i2, i3 = st.columns(4)
-            p_clr_single = "#FF4B4B" if pft > 0 else "#00B050"
-            i0.markdown(f"**個股損益 (報酬)**\n<h3 style='color:{p_clr_single};'>{int(pft):,} ({pft_r:.2f}%)</h3>", unsafe_allow_html=True)
+            i0, i1, i2, i3 = st.columns(4) 
+            p_clr = "#FF4B4B" if pft > 0 else "#00B050"
+            i0.markdown(f"**預估損益 (報酬率)** \n<span style='color:{p_clr}; font-size:24px; font-weight:bold;'>{int(pft):,} ({pft_r:.2f}%)</span>", unsafe_allow_html=True)
             i1.metric("買入均價", f"{c:.2f}")
-            i2.metric("投入本金", f"{int(c*q*1000):,}")
-            i3.metric("目前市值", f"{int(price*q*1000):,}")
+            i2.metric("投入本金", f"NT$ {int(c*q*1000):,}")
+            i3.metric("目前市值", f"NT$ {int(price*q*1000):,}")
 
-        # 即時概況儀表板
+        # 2. 個股即時概況指標
+        st.subheader(f"📊 {ticker_input} {active_list.get(ticker_input, '')} 即時概況")
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         m1.metric("當前股價", f"{price:.2f}", f"{price - float(prev['Close']):.2f}", delta_color="inverse")
-        m2.metric("期間最高", f"{data['High'].max():.2f}")
+        m2.metric("60日高點", f"{data['High'].tail(60).max():.2f}")
         m3.metric("5MA", f"{float(curr['MA5']):.2f}")
         m4.metric("20MA", f"{float(curr['MA20']):.2f}")
         m5.metric("60MA", f"{float(curr['MA60']):.2f}")
         m6.metric("RSI(14)", f"{float(curr['RSI']):.1f}")
-
-        # 繪製圖表
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
-        fig.add_trace(go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name="K線"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=data.index, y=data['MA5'], name="5MA", line=dict(width=1)), row=1, col=1)
-        fig.add_trace(go.Bar(x=data.index, y=data['Volume'], name="成交量"), row=2, col=1)
-        fig.update_layout(xaxis_rangeslider_visible=False, height=600, template="plotly_dark")
-        st.plotly_chart(fig, use_container_width=True)
-
         # 3. 法人籌碼數據
         st.write("---")
         st.subheader("👥 昨日三大法人買賣數據 (張)")
