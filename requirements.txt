@@ -6,4 +6,4 @@ FinMind
 tqdm
 requests
 st-gsheets-connection
-
+pandas-datareader
