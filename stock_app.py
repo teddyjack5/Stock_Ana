@@ -566,7 +566,7 @@ def get_monthly_revenue(stock_id):
 # ==============================================================================
 # 第五部分：【視覺化報表與 AI 評等】 - 主畫面圖表渲染
 # ==============================================================================
-f ticker_input:
+if ticker_input:
     # 決定抓取頻率
     period = st.radio("時間範圍", ["1d", "5d", "1mo", "6mo"], horizontal=True)
     f_interval = "1m" if period in ["1d", "5d"] else "1d"
