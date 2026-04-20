@@ -374,35 +374,33 @@ if active_costs:
     with st.spinner("正在同步雲端數據並計算總資產..."):
         for t_code, info in active_costs.items():
             try:
-                # 統一使用 period="1d" 抓取現價
+                # 關鍵修正 1：使用 1m 間隔強制抓取今日最新點位
                 temp_df = yf.download(t_code, period="1d", interval="1m", progress=False)
+                
                 if not temp_df.empty:
-                    # 處理 yfinance 可能產生的 MultiIndex
+                    # 關鍵修正 2：處理可能的多重索引
                     if isinstance(temp_df.columns, pd.MultiIndex):
                         temp_df.columns = temp_df.columns.get_level_values(0)
                     
-                    # 確保抓到的是最後一個有效的收盤價數字
-                    c_price = float(temp_df['Close'].dropna().iloc[-1])
-                    
-                    # 處理庫存資料格式
-                    c = float(info['cost']) if isinstance(info, dict) else float(info)
-                    q = float(info['qty']) if isinstance(info, dict) else 0.0
-                    
-                    # 計算各標市值
-                    current_market_val = c_price * q * 1000
-                    
-                    # 累加總額
-                    total_cost += (c * q * 1000)
-                    total_value += current_market_val
-                    
-                    # 存入列表供下方圓餅圖使用
-                    if current_market_val > 0:
-                        processed_data.append({
-                            "label": active_list.get(t_code, t_code),
-                            "value": current_market_val
-                        })
+                    # 關鍵修正 3：取最後一個非 NaN 的價格（這就是現在的即時價）
+                    valid_close = temp_df['Close'].dropna()
+                    if not valid_close.empty:
+                        c_price = float(valid_close.iloc[-1])
+                        
+                        # 處理庫存資料格式 (保持原樣)
+                        c = float(info['cost']) if isinstance(info, dict) else float(info)
+                        q = float(info['qty']) if isinstance(info, dict) else 0.0
+                        
+                        current_market_val = c_price * q * 1000
+                        total_cost += (c * q * 1000)
+                        total_value += current_market_val
+                        
+                        if current_market_val > 0:
+                            processed_data.append({
+                                "label": active_list.get(t_code, t_code),
+                                "value": current_market_val
+                            })
             except Exception as e:
-                st.error(f"標的 {t_code} 數據解析錯誤: {e}")
                 continue
 
 # 計算損益
@@ -570,7 +568,8 @@ def get_monthly_revenue(stock_id):
 # ==============================================================================
 if ticker_input:
     # 這裡建議加入 interval="1m" 確保穿透週一早盤的延遲
-    data = yf.download(ticker_input, period=period, interval="1m" if period=="1d" else "1d")
+    fetch_interval = "1m" if period == "5d" or period == "1d" else "1d"
+    data = yf.download(ticker_input, period=period, interval=fetch_interval)
     
     if not data.empty:
         # 1. 核心修正：處理 yfinance 的多重索引 (必須在讀取欄位前執行)
