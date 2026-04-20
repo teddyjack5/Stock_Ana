@@ -375,7 +375,7 @@ if active_costs:
         for t_code, info in active_costs.items():
             try:
                 # 統一使用 period="1d" 抓取現價
-                temp_df = yf.download(t_code, period="1d", progress=False)
+                temp_df = yf.download(t_code, period="1d", interval="1m", progress=False)
                 if not temp_df.empty:
                     # 處理 yfinance 可能產生的 MultiIndex
                     if isinstance(temp_df.columns, pd.MultiIndex):
@@ -569,15 +569,33 @@ def get_monthly_revenue(stock_id):
 # 第五部分：【視覺化報表與 AI 評等】 - 主畫面圖表渲染
 # ==============================================================================
 if ticker_input:
-    data = yf.download(ticker_input, period=period)
+    # 這裡建議加入 interval="1m" 確保穿透週一早盤的延遲
+    data = yf.download(ticker_input, period=period, interval="1m" if period=="1d" else "1d")
+    
     if not data.empty:
-        # 指標計算
-        if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
+        # 1. 核心修正：處理 yfinance 的多重索引 (必須在讀取欄位前執行)
+        if isinstance(data.columns, pd.MultiIndex): 
+            data.columns = data.columns.get_level_values(0)
+            
+        # 2. 核心修正：強制轉換型態並處理縮排
+        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+            if col in data.columns:
+                # 這裡要縮排兩次，因為它在 if 裡面，if 又在 for 裡面
+                data[col] = pd.to_numeric(data[col], errors='coerce')
+        
+        # 3. 清理掉 NaN 值，避免指標計算（如 RSI）出錯
+        data = data.dropna(subset=['Close'])
+
+        # --- 開始指標計算 ---
         data['MACD'], data['Signal'], data['Hist'] = calculate_macd(data)
         data['ATR'] = calculate_atr(data)
         data['RSI'] = calculate_rsi(data)
-        data['MA5'] = data['Close'].rolling(5).mean(); data['MA20'] = data['Close'].rolling(20).mean(); data['MA60'] = data['Close'].rolling(60).mean()
+        data['MA5'] = data['Close'].rolling(5).mean()
+        data['MA20'] = data['Close'].rolling(20).mean()
+        data['MA60'] = data['Close'].rolling(60).mean()
         data['ATR_Trailing'] = data['Close'].rolling(20).max() - (data['ATR'] * 2)
+        
+        # 取得最新與前一筆資料
         curr, prev = data.iloc[-1], data.iloc[-2]
         price = float(curr['Close'])
 
@@ -585,10 +603,13 @@ if ticker_input:
         if ticker_input in active_costs:
             st.write("---")
             info = active_costs[ticker_input]
-            c = info['cost'] if isinstance(info, dict) else info
-            q = info['qty'] if isinstance(info, dict) else 1.0
+            # 防呆處理：相容 dict 格式與純數值格式
+            c = float(info['cost']) if isinstance(info, dict) else float(info)
+            q = float(info['qty']) if isinstance(info, dict) else 1.0
+            
             pft = (price * q * 1000) - (c * q * 1000)
             pft_r = (pft / (c * q * 1000)) * 100 if c > 0 else 0
+            
             i0, i1, i2, i3 = st.columns(4) 
             p_clr = "#FF4B4B" if pft > 0 else "#00B050"
             i0.markdown(f"**預估損益 (報酬率)** \n<span style='color:{p_clr}; font-size:24px; font-weight:bold;'>{int(pft):,} ({pft_r:.2f}%)</span>", unsafe_allow_html=True)
@@ -601,8 +622,10 @@ if ticker_input:
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         m1.metric("當前股價", f"{price:.2f}", f"{price - float(prev['Close']):.2f}", delta_color="inverse")
         m2.metric("60日高點", f"{data['High'].tail(60).max():.2f}")
-        m3.metric("5MA", f"{float(curr['MA5']):.2f}"); m4.metric("20MA", f"{float(curr['MA20']):.2f}")
-        m5.metric("60MA", f"{float(curr['MA60']):.2f}"); m6.metric("RSI(14)", f"{float(curr['RSI']):.1f}")
+        m3.metric("5MA", f"{float(curr['MA5']):.2f}")
+        m4.metric("20MA", f"{float(curr['MA20']):.2f}")
+        m5.metric("60MA", f"{float(curr['MA60']):.2f}")
+        m6.metric("RSI(14)", f"{float(curr['RSI']):.1f}")
 
         # 3. 法人籌碼數據
         st.write("---")
