@@ -100,7 +100,7 @@ def tw_card(label, value_str, delta_num, pct_num, is_probability=False, status_t
             padding: 25px; 
             border-radius: 15px; 
             border: 1px solid #3e4249; 
-            min-height: 200px; 
+            min-height: 220px; 
             display: flex; 
             flex-direction: column; 
             justify-content: center; 
