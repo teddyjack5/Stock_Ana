@@ -49,31 +49,6 @@ def hash_password(password):
         return None
     return hashlib.sha256(password.encode()).hexdigest()
 
-st.markdown("""
-    <style>
-    /* 1. 處理上漲 (Up) 的顏色：強制改為台股紅 */
-    [data-testid="stMetricDelta"] div[data-status="success"] {
-        color: #FF4B4B !important;
-    }
-    [data-testid="stMetricDelta"] svg[title="Increase"] {
-        fill: #FF4B4B !important;
-    }
-
-    /* 2. 處理下跌 (Down) 的顏色：強制改為台股綠 */
-    [data-testid="stMetricDelta"] div[data-status="error"] {
-        color: #00FF00 !important;
-    }
-    [data-testid="stMetricDelta"] svg[title="Decrease"] {
-        fill: #00FF00 !important;
-    }
-
-    /* 3. 額外保險：如果上面的屬性失效，直接針對文字顏色進行全域覆蓋 */
-    div[data-testid="stMetricDelta"] > div:first-child {
-        color: inherit !important; 
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
 def get_market_data():
     try:
         # 抓取台指期近月 (玩股網即時接口)
@@ -98,6 +73,25 @@ def get_market_data():
     except Exception as e:
         # 如果 API 失敗，退而求其次使用備援數據（避免 App 崩潰）
         return 37605.0, 350.0, 0.94, 37255.0
+
+def tw_metric(label, value, delta):
+    """
+    自製台股紅綠燈組件
+    delta 傳入數值，自動判定顏色：正數紅、負數綠
+    """
+    is_positive = float(delta) >= 0
+    color = "#FF4B4B" if is_positive else "#00FF00" # 紅漲綠跌
+    arrow = "▲" if is_positive else "▼"
+    
+    st.markdown(f"""
+        <div style="background-color: #1E2028; padding: 15px; border-radius: 10px; border: 1px solid #3e4249; margin-bottom: 10px;">
+            <p style="margin: 0; color: #A0A4B8; font-size: 0.9rem;">{label}</p>
+            <h2 style="margin: 5px 0; color: white; font-size: 2rem;">{value}</h2>
+            <p style="margin: 0; color: {color}; font-size: 1.1rem; font-weight: bold;">
+                {arrow} {delta}
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
 # --- App 呈現 ---
 st.subheader("🌙 2026 盤前預測 (穩定連線版)")
 
