@@ -93,16 +93,27 @@ def tw_metric(label, value, delta):
         </div>
     """, unsafe_allow_html=True)
 # --- App 呈現 ---
-st.subheader("🌙 2026 盤前預測 (穩定連線版)")
+st.title("🚀 2026 盤前精準預測 (熱血紅版)")
 
 price, diff, pct, prev_close = get_market_data()
 
 if price:
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("台指期夜盤/目前點位", f"{price:,.0f}", f"{diff:+.0f}")
+        # 使用自定義組件，顏色絕對聽話！
+        tw_metric("台指期目前/夜盤點位", f"{price:,.0f}", f"{diff:+.0f} ({pct:+.2f}%)")
+    
     with col2:
-        st.metric("預估早盤漲跌幅", f"{pct:+.2f}%")
+        # 00631L 預測 (以 26.5 元為基準)
+        p2_now = 26.5
+        p2_predict = p2_now * (1 + (pct * 2 / 100))
+        tw_metric("00631L 預估開盤價", f"${p2_predict:.2f}", f"預估漲跌 {(pct*2):+.2f}%")
+
+    st.write("---")
+    st.caption(f"📊 數據基準：昨日收盤 {prev_close:,.0f} | SIT 專家調校：紅漲綠跌邏輯已鎖定")
+
+else:
+    st.warning("數據連線中，請稍候...")
 # ==============================================================================
 # 第二部分：【互動對話視窗 (Dialogs)】 - UI 彈窗功能定義
 # ==============================================================================
