@@ -64,46 +64,43 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-def get_realtime_futures():
-    """抓取台指期近月，精準計算夜盤漲跌"""
+def get_market_data():
     try:
-        # 改抓台指期近月 (Yahoo 標號通常是 %5EFITX)
-        url = "https://tw.stock.yahoo.com/quote/%5EFITX"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
+        # 抓取台指期近月 (^FITX)
+        ticker = yf.Ticker("^FITX")
+        # 抓取最近 2 天的資料來比對
+        data = ticker.history(period="2d")
         
-        # 1. 目前價格 (夜盤點位)
-        price_str = soup.find('span', {'class': 'Fz(32px)'}).text.replace(',', '')
-        current_night_price = float(price_str)
-        
-        # 2. 漲跌點數 (Yahoo 直接提供的漲跌點數，最精準)
-        # 抓取包含 Fz(20px) 且有漲跌符號的那個 span
-        change_element = soup.find('span', {'class': 'Fz(20px)'})
-        change_val = float(change_element.text.replace(',', '').replace('+', ''))
-        
-        # 3. 反推昨收 (今日日盤收盤價)
-        last_close = current_night_price - change_val
-        
-        return current_night_price, change_val, last_close
+        if len(data) >= 2:
+            current_price = data['Close'].iloc[-1]
+            last_close = data['Close'].iloc[-2]
+            diff = current_price - last_close
+            pct = (diff / last_close) * 100
+            return current_price, diff, pct, last_close
+        else:
+            # 如果資料不足（例如開盤初期），嘗試抓取最新即時價
+            info = ticker.fast_info
+            current_price = info.last_price
+            last_close = info.previous_close
+            diff = current_price - last_close
+            pct = (diff / last_close) * 100
+            return current_price, diff, pct, last_close
     except Exception as e:
-        st.error(f"資料讀取失敗: {e}")
-        return None, None, None
+        st.error(f"金融數據 API 連線失敗: {e}")
+        return None, None, None, None
 
 # --- App 呈現 ---
-st.subheader("🌙 夜盤預測儀表板 (台股配色修正版)")
+st.subheader("🌙 2026 盤前精準預測 (API 穩定版)")
 
-night_price, diff, last_close = get_realtime_futures()
+price, diff, pct, prev_close = get_market_data()
 
-if night_price:
-    predict_pct = (diff / last_close) * 100
-    
+if price:
     col1, col2 = st.columns(2)
     with col1:
-        # 現在這裡會正確顯示「紅色的 300 多點」
-        st.metric("台指期夜盤/目前點位", f"{night_price:,.0f}", f"{diff:+.0f}")
+        # 這裡會自動套用紅綠配色
+        st.metric("台指期目前/夜盤點位", f"{price:,.0f}", f"{diff:+.0f}")
     with col2:
-        st.metric("預估開盤漲跌幅", f"{predict_pct:+.2f}%")
+        st.metric("預估開盤漲跌幅", f"{pct:+.2f}%")
 # ==============================================================================
 # 第二部分：【互動對話視窗 (Dialogs)】 - UI 彈窗功能定義
 # ==============================================================================
