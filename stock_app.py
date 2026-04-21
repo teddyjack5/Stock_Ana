@@ -106,46 +106,73 @@ def get_win_probability(pct):
     elif -0.5 <= pct < -0.1: return 35, "震盪偏空", "#00FF00"
     else: return 15, "保守看跌", "#00FF00"
 
-st.title("📊 台股開盤機率分析儀表板")
+def tw_metric_optimized(label, value_str, delta_num, pct_num, is_probability=False, status_text=None, p_color=None):
+    is_positive = delta_num >= 0
+    # 判定主色調：紅漲綠跌
+    main_color = p_color if is_probability else ("#FF4B4B" if is_positive else "#00FF00")
+    arrow = "▲" if is_positive else "▼"
+    
+    # 關鍵修正：固定 min-height 並使用 Flexbox 垂直置中
+    if is_probability:
+        content = f"""
+            <h1 style="margin: 5px 0; color: {main_color}; font-size: 3.5rem; font-weight: 800;">{value_str}</h1>
+            <div style="background-color: {main_color}33; color: {main_color}; padding: 4px 12px; border-radius: 8px; display: inline-block; font-weight: bold;">
+                {status_text}
+            </div>
+        """
+    else:
+        content = f"""
+            <h2 style="margin: 10px 0; color: white; font-size: 2.2rem; font-family: sans-serif;">{value_str}</h2>
+            <p style="margin: 0; color: {main_color}; font-size: 1.2rem; font-weight: bold;">
+                {arrow} {delta_num:+.0f} ({pct_num:+.2f}%)
+            </p>
+        """
+
+    st.markdown(f"""
+        <div style="
+            background-color: #1E2028; 
+            padding: 25px; 
+            border-radius: 15px; 
+            border: 1px solid #3e4249; 
+            min-height: 200px; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        ">
+            <p style="margin: 0; color: #A0A4B8; font-size: 0.9rem; letter-spacing: 1px; text-transform: uppercase;">{label}</p>
+            {content}
+        </div>
+    """, unsafe_allow_html=True)
+
+st.title("📈 盤前機率趨勢分析")
 
 price, diff, pct, prev_close = get_market_data()
 
 if price:
     prob, status, p_color = get_win_probability(pct)
     
-    col1, col2 = st.columns(2)
+    # 設定 columns 間距
+    col1, col2 = st.columns(2, gap="medium")
     
     with col1:
-        # 左側保留：夜盤即時連動數據
-        tw_metric("台指期夜盤連動", f"{price:,.0f}", diff, pct)
+        # 左側卡片
+        tw_metric_optimized("台指期夜盤即時連動", f"{price:,.0f}", diff, pct)
     
     with col2:
-        # 右側修改：顯示今日台股上漲機率
-        st.markdown(f"""
-            <div style="background-color: #1E2028; padding: 18px; border-radius: 12px; border: 1px solid #3e4249; height: 100%; text-align: center;">
-                <p style="margin: 0; color: #A0A4B8; font-size: 0.9rem;">今日台股收紅機率</p>
-                <h1 style="margin: 10px 0; color: {p_color}; font-size: 3.5rem;">{prob}%</h1>
-                <div style="background-color: {p_color}33; color: {p_color}; padding: 5px 10px; border-radius: 8px; display: inline-block; font-weight: bold;">
-                    {status}
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
+        # 右側卡片 (機率)
+        tw_metric_optimized("今日台股收紅機率", f"{prob}%", diff, pct, 
+                            is_probability=True, status_text=status, p_color=p_color)
 
-    st.write("---")
+    st.write("###") # 撐開間距
     
-    # 底部專業分析
-    with st.expander("📝 盤前 SIT 數據診斷", expanded=True):
-        st.write(f"目前夜盤點位為 **{price:,.0f}**，較日盤收盤變動了 **{diff:+.0f}** 點。")
-        if pct > 0.3:
-            st.write(f"🔥 夜盤展現強勁漲勢 ({pct:.2f}%)，今日現貨開盤跳空向上的機率極高，屬於典型的多方盤勢。")
-        elif pct < -0.3:
-            st.write(f"❄️ 夜盤走勢疲軟 ({pct:.2f}%)，今日盤中需注意回檔壓力，建議保守操作。")
-        else:
-            st.write(f"⚖️ 夜盤波幅較小，預期今日開盤將維持平盤附近震盪，等待市場進一步消息。")
-
-    st.caption(f"📊 數據基準：昨日收盤 {prev_close:,.0f} | 2026 策略模型已掛載")
+    # 底部資訊欄
+    st.info(f"💡 **診斷筆記**：目前夜盤顯示 {status}，點數變動 {diff:+.0f} 點。基準收盤點位為 {prev_close:,.0f}。")
+    st.caption("🎨 視覺優化版：已鎖定紅漲綠跌邏輯與容器對齊 (Min-Height: 200px)")
 else:
-    st.warning("正在連線至金融數據中心...")
+    st.error("系統封包遺失，請重新整理頁面。")
 # ==============================================================================
 # 第二部分：【互動對話視窗 (Dialogs)】 - UI 彈窗功能定義
 # ==============================================================================
