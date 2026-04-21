@@ -51,64 +51,59 @@ def hash_password(password):
 
 st.markdown("""
     <style>
-    /* 將原本代表上升的綠色強制改為紅色 */
-    [data-testid="stMetricDelta"] > div[direction="up"] {
-        color: #FF4B4B !important;
+    /* 強制將 st.metric 的正值(Up)改為紅色，負值(Down)改為綠色 */
+    [data-testid="stMetricDelta"] svg {
+        fill: currentColor !important;
     }
-    /* 將原本代表下降的紅色強制改為綠色 */
+    [data-testid="stMetricDelta"] > div[direction="up"] {
+        color: #FF4B4B !important; /* 台股紅 */
+    }
     [data-testid="stMetricDelta"] > div[direction="down"] {
-        color: #00FF00 !important;
+        color: #00FF00 !important; /* 台股綠 */
     }
     </style>
     """, unsafe_allow_html=True)
 
 def get_realtime_futures():
-    """自動抓取台指期/加權指數即時報價與昨收"""
+    """抓取台指期近月，精準計算夜盤漲跌"""
     try:
-        # 使用 Yahoo 股市加權指數頁面
-        url = "https://tw.stock.yahoo.com/quote/%5ETWII"
+        # 改抓台指期近月 (Yahoo 標號通常是 %5EFITX)
+        url = "https://tw.stock.yahoo.com/quote/%5EFITX"
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # 抓取「最新價格」
+        # 1. 目前價格 (夜盤點位)
         price_str = soup.find('span', {'class': 'Fz(32px)'}).text.replace(',', '')
-        current_price = float(price_str)
+        current_night_price = float(price_str)
         
-        # 抓取「昨收價」 (定位 Yahoo 股市右側資訊欄的昨收數值)
-        # 這裡通常是在一個包含 '昨收' 字樣的清單中
-        last_close_element = soup.find('span', string='昨收').find_next('span').text.replace(',', '')
-        last_close = float(last_close_element)
+        # 2. 漲跌點數 (Yahoo 直接提供的漲跌點數，最精準)
+        # 抓取包含 Fz(20px) 且有漲跌符號的那個 span
+        change_element = soup.find('span', {'class': 'Fz(20px)'})
+        change_val = float(change_element.text.replace(',', '').replace('+', ''))
         
-        return current_price, last_close
+        # 3. 反推昨收 (今日日盤收盤價)
+        last_close = current_night_price - change_val
+        
+        return current_night_price, change_val, last_close
     except Exception as e:
-        return None, None
+        st.error(f"資料讀取失敗: {e}")
+        return None, None, None
 
-# --- 2. 在 App 中的實作 ---
-st.subheader("🤖 自動化盤前預測系統")
+# --- App 呈現 ---
+st.subheader("🌙 夜盤預測儀表板 (台股配色修正版)")
 
-# 自動抓取資料
-night_price, last_day_close = get_realtime_futures()
+night_price, diff, last_close = get_realtime_futures()
 
-if night_price and last_day_close:
-    # 修正：diff 現在是基於動態抓取的「昨收」計算
-    diff = night_price - last_day_close
-    predict_pct = (diff / last_day_close) * 100
+if night_price:
+    predict_pct = (diff / last_close) * 100
     
-    # UI 呈現 (配色已由 CSS 自動轉換)
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("當前/夜盤點位", f"{night_price:,.0f}", f"{diff:+.0f}")
+        # 現在這裡會正確顯示「紅色的 300 多點」
+        st.metric("台指期夜盤/目前點位", f"{night_price:,.0f}", f"{diff:+.0f}")
     with col2:
-        st.metric("預估早盤漲跌", f"{predict_pct:+.2f}%")
-    
-    # 00631L 連動試算 (使用動態昨收計算)
-    # 假設 00631L 兩倍槓桿，預估開盤漲幅為 predict_pct * 2
-    st.info(f"📊 **00631L 預估開盤動態**：預計較昨日收盤約 {predict_pct*2:+.2f}%")
-    st.caption(f"資料來源基準：Yahoo 股市 (昨收價 {last_day_close:,.0f})")
-
-else:
-    st.warning("暫時無法自動取得即時數據，請檢查 Yahoo 股市網頁結構或網路連線。")
+        st.metric("預估開盤漲跌幅", f"{predict_pct:+.2f}%")
 # ==============================================================================
 # 第二部分：【互動對話視窗 (Dialogs)】 - UI 彈窗功能定義
 # ==============================================================================
