@@ -74,46 +74,46 @@ def get_market_data():
         # 如果 API 失敗，退而求其次使用備援數據（避免 App 崩潰）
         return 37605.0, 350.0, 0.94, 37255.0
 
-def tw_metric(label, value, delta):
+def tw_metric(label, value_str, delta_num, pct_num):
     """
-    自製台股紅綠燈組件
-    delta 傳入數值，自動判定顏色：正數紅、負數綠
+    修正點：直接傳入數字 (delta_num, pct_num) 進行邏輯判斷
     """
-    is_positive = float(delta) >= 0
-    color = "#FF4B4B" if is_positive else "#00FF00" # 紅漲綠跌
+    is_positive = delta_num >= 0
+    color = "#FF4B4B" if is_positive else "#00FF00"  # 確保紅漲綠跌
     arrow = "▲" if is_positive else "▼"
     
     st.markdown(f"""
-        <div style="background-color: #1E2028; padding: 15px; border-radius: 10px; border: 1px solid #3e4249; margin-bottom: 10px;">
-            <p style="margin: 0; color: #A0A4B8; font-size: 0.9rem;">{label}</p>
-            <h2 style="margin: 5px 0; color: white; font-size: 2rem;">{value}</h2>
-            <p style="margin: 0; color: {color}; font-size: 1.1rem; font-weight: bold;">
-                {arrow} {delta}
+        <div style="background-color: #1E2028; padding: 18px; border-radius: 12px; border: 1px solid #3e4249; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+            <p style="margin: 0; color: #A0A4B8; font-size: 0.9rem; letter-spacing: 1px;">{label}</p>
+            <h2 style="margin: 8px 0; color: white; font-size: 2.2rem; font-family: sans-serif;">{value_str}</h2>
+            <p style="margin: 0; color: {color}; font-size: 1.2rem; font-weight: bold;">
+                {arrow} {delta_num:+.0f} ({pct_num:+.2f}%)
             </p>
         </div>
     """, unsafe_allow_html=True)
 # --- App 呈現 ---
-st.title("🚀 2026 盤前精準預測 (熱血紅版)")
+st.title("🚀 2026 盤前精準預測 (熱血紅修正版)")
 
 price, diff, pct, prev_close = get_market_data()
 
 if price:
     col1, col2 = st.columns(2)
+    
     with col1:
-        # 使用自定義組件，顏色絕對聽話！
-        tw_metric("台指期目前/夜盤點位", f"{price:,.0f}", f"{diff:+.0f} ({pct:+.2f}%)")
+        # 修正呼叫方式：分別傳入 價格字串, 漲跌數值, 百分比數值
+        tw_metric("台指期夜盤點位", f"{price:,.0f}", diff, pct)
     
     with col2:
-        # 00631L 預測 (以 26.5 元為基準)
+        # 00631L 預測 (以目前價 26.5 元為基準)
         p2_now = 26.5
         p2_predict = p2_now * (1 + (pct * 2 / 100))
-        tw_metric("00631L 預估開盤價", f"${p2_predict:.2f}", f"預估漲跌 {(pct*2):+.2f}%")
+        p2_diff_pct = pct * 2
+        tw_metric("00631L 預估開盤", f"${p2_predict:.2f}", (p2_predict - p2_now), p2_diff_pct)
 
     st.write("---")
-    st.caption(f"📊 數據基準：昨日收盤 {prev_close:,.0f} | SIT 專家調校：紅漲綠跌邏輯已鎖定")
-
+    st.caption(f"📊 數據基準：昨日收盤 {prev_close:,.0f} | 狀態：SIT 邏輯對齊完成")
 else:
-    st.warning("數據連線中，請稍候...")
+    st.warning("正在連線至金融數據中心...")
 # ==============================================================================
 # 第二部分：【互動對話視窗 (Dialogs)】 - UI 彈窗功能定義
 # ==============================================================================
