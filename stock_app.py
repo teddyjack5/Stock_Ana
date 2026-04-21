@@ -51,16 +51,8 @@ def hash_password(password):
 
 st.markdown("""
     <style>
-    /* 強制將 st.metric 的正值(Up)改為紅色，負值(Down)改為綠色 */
-    [data-testid="stMetricDelta"] svg {
-        fill: currentColor !important;
-    }
-    [data-testid="stMetricDelta"] > div[direction="up"] {
-        color: #FF4B4B !important; /* 台股紅 */
-    }
-    [data-testid="stMetricDelta"] > div[direction="down"] {
-        color: #00FF00 !important; /* 台股綠 */
-    }
+    [data-testid="stMetricDelta"] > div[direction="up"] { color: #FF4B4B !important; }
+    [data-testid="stMetricDelta"] > div[direction="down"] { color: #00FF00 !important; }
     </style>
     """, unsafe_allow_html=True)
 
