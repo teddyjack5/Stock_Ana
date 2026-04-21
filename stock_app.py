@@ -55,13 +55,15 @@ def get_market_data():
         headers = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.wantgoo.com/'}
         response = requests.get(url, headers=headers, timeout=10)
         data = response.json()
-        cp, lc = float(data['currentPrice']), float(data['closePrice'])
-        diff = cp - lc
-        return cp, diff, (diff/lc)*100, lc
+        current_price = float(data['currentPrice'])
+        last_close = float(data['closePrice'])
+        diff = current_price - last_close
+        pct = (diff / last_close) * 100
+        return current_price, diff, pct, last_close
     except:
         return 37605.0, 350.0, 0.94, 37255.0
 
-# 2. 機率邏輯
+# 2. 機率模型
 def get_win_probability(pct):
     if pct > 1.2: return 95, "極度樂觀", "#FF4B4B"
     elif 0.5 < pct <= 1.2: return 80, "偏多上漲", "#FF4B4B"
@@ -70,51 +72,67 @@ def get_win_probability(pct):
     elif -0.5 <= pct < -0.1: return 35, "震盪偏空", "#00FF00"
     else: return 15, "保守看跌", "#00FF00"
 
-# 3. 核心視覺組件 (關鍵：這整個函式只用一次 st.markdown)
-def tw_card(label, value_str, delta_num, pct_num, is_prob=False, status="", p_color=None):
-    is_pos = delta_num >= 0
-    m_color = p_color if is_prob else ("#FF4B4B" if is_pos else "#00FF00")
-    arrow = "▲" if is_pos else "▼"
+# 3. 視覺組件 (確保對齊與解析 HTML)
+def tw_card(label, value_str, delta_num, pct_num, is_probability=False, status_text=None, p_color=None):
+    is_positive = delta_num >= 0
+    main_color = p_color if is_probability else ("#FF4B4B" if is_positive else "#00FF00")
+    arrow = "▲" if is_positive else "▼"
     
-    # 組合內部內容
-    if is_prob:
-        sub_content = f"""
-            <h1 style="margin: 5px 0; color: {m_color}; font-size: 3.5rem; font-weight: 800;">{value_str}</h1>
-            <div style="background-color: {m_color}33; color: {m_color}; padding: 4px 12px; border-radius: 8px; display: inline-block; font-weight: bold;">{status}</div>
+    if is_probability:
+        content = f"""
+            <h1 style="margin: 5px 0; color: {main_color}; font-size: 3.5rem; font-weight: 800;">{value_str}</h1>
+            <div style="background-color: {main_color}33; color: {main_color}; padding: 4px 12px; border-radius: 8px; display: inline-block; font-weight: bold;">
+                {status_text}
+            </div>
         """
     else:
-        sub_content = f"""
-            <h2 style="margin: 10px 0; color: white; font-size: 2.2rem;">{value_str}</h2>
-            <p style="margin: 0; color: {m_color}; font-size: 1.2rem; font-weight: bold;">{arrow} {delta_num:+.0f} ({pct_num:+.2f}%)</p>
+        content = f"""
+            <h2 style="margin: 10px 0; color: white; font-size: 2.2rem; font-family: sans-serif;">{value_str}</h2>
+            <p style="margin: 0; color: {main_color}; font-size: 1.2rem; font-weight: bold;">
+                {arrow} {delta_num:+.0f} ({pct_num:+.2f}%)
+            </p>
         """
 
-    # 外部容器 (確保加上 unsafe_allow_html=True)
-    full_html = f"""
-        <div style="background-color: #1E2028; padding: 25px; border-radius: 15px; border: 1px solid #3e4249; min-height: 200px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
-            <p style="margin: 0; color: #A0A4B8; font-size: 0.9rem; letter-spacing: 1px;">{label}</p>
-            {sub_content}
+    # --- 重要修正點：加上 unsafe_allow_html=True ---
+    st.markdown(f"""
+        <div style="
+            background-color: #1E2028; 
+            padding: 25px; 
+            border-radius: 15px; 
+            border: 1px solid #3e4249; 
+            min-height: 200px; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        ">
+            <p style="margin: 0; color: #A0A4B8; font-size: 0.9rem; letter-spacing: 1px; text-transform: uppercase;">{label}</p>
+            {content}
         </div>
-    """
-    st.markdown(full_html, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-# --- App 執行 ---
-st.title("📈 盤前趨勢分析報告")
+# 4. App 執行區
+st.title("📈 盤前機率趨勢分析")
 
 price, diff, pct, prev_close = get_market_data()
 
 if price:
     prob, status, p_color = get_win_probability(pct)
-    c1, c2 = st.columns(2, gap="medium")
+    col1, col2 = st.columns(2, gap="medium")
     
-    with c1:
+    with col1:
         tw_card("台指期夜盤連動", f"{price:,.0f}", diff, pct)
     
-    with c2:
-        tw_card("今日台股收紅機率", f"{prob}%", diff, pct, is_prob=True, status=status, p_color=p_color)
-    
+    with col2:
+        tw_card("今日台股收紅機率", f"{prob}%", diff, pct, 
+                is_probability=True, status_text=status, p_color=p_color)
+
+    st.write("###") 
     st.info(f"💡 基準收盤：{prev_close:,.0f} | 狀態：{status}")
 else:
-    st.error("連線失敗")
+    st.error("連線失敗，請檢查網路。")
 # ==============================================================================
 # 第二部分：【互動對話視窗 (Dialogs)】 - UI 彈窗功能定義
 # ==============================================================================
