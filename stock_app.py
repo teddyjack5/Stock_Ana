@@ -114,25 +114,36 @@ def tw_card(label, value_str, delta_num, pct_num, is_probability=False, status_t
     """, unsafe_allow_html=True)
 
 # 4. App 執行區
-st.title("📈 盤前機率趨勢分析")
+st.title("🚀 2026 盤前趨勢儀表板")
 
 price, diff, pct, prev_close = get_market_data()
 
 if price:
     prob, status, p_color = get_win_probability(pct)
+    
     col1, col2 = st.columns(2, gap="medium")
     
+    # 這裡直接寫入 HTML，不再呼叫函式，確保參數絕對有效
     with col1:
-        tw_card("台指期夜盤連動", f"{price:,.0f}", diff, pct)
+        st.markdown(f"""
+            <div style="background-color: #1E2028; padding: 25px; border-radius: 15px; border: 1px solid #3e4249; min-height: 200px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+                <p style="margin: 0; color: #A0A4B8; font-size: 0.9rem;">台指期夜盤連動</p>
+                <h2 style="margin: 10px 0; color: white; font-size: 2.2rem;">{price:,.0f}</h2>
+                <p style="margin: 0; color: #FF4B4B; font-size: 1.2rem; font-weight: bold;">▲ {diff:+.0f} ({pct:+.2f}%)</p>
+            </div>
+        """, unsafe_allow_html=True)
     
     with col2:
-        tw_card("今日台股收紅機率", f"{prob}%", diff, pct, 
-                is_probability=True, status_text=status, p_color=p_color)
+        st.markdown(f"""
+            <div style="background-color: #1E2028; padding: 25px; border-radius: 15px; border: 1px solid #3e4249; min-height: 200px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+                <p style="margin: 0; color: #A0A4B8; font-size: 0.9rem;">今日台股收紅機率</p>
+                <h1 style="margin: 5px 0; color: {p_color}; font-size: 3.5rem; font-weight: 800;">{prob}%</h1>
+                <div style="background-color: {p_color}33; color: {p_color}; padding: 4px 12px; border-radius: 8px; display: inline-block; font-weight: bold;">{status}</div>
+            </div>
+        """, unsafe_allow_html=True)
 
-    st.write("###") 
-    st.info(f"💡 基準收盤：{prev_close:,.0f} | 狀態：{status}")
-else:
-    st.error("連線失敗，請檢查網路。")
+    st.write("---")
+    st.info(f"💡 基準收盤：{prev_close:,.0f} | 畫面已優化：強制對齊模式")
 # ==============================================================================
 # 第二部分：【互動對話視窗 (Dialogs)】 - UI 彈窗功能定義
 # ==============================================================================
