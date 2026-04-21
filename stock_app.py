@@ -51,8 +51,6 @@ def hash_password(password):
 
 def get_market_data():
     try:
-        # 抓取台指期近月 (玩股網即時接口)
-        # 台指期代號通常是 WTX&
         url = "https://www.wantgoo.com/investor/api/market-chart?stockNo=WTX%26"
         headers = {
             'User-Agent': 'Mozilla/5.0',
@@ -62,8 +60,6 @@ def get_market_data():
         data = response.json()
         
         # 獲取最新點位與昨收
-        # 註：此處 JSON 結構依網站實際回傳為準，通常包含 currentPrice 與 closePrice
-        # 如果是夜盤時間，它會自動對比日盤收盤
         current_price = float(data['currentPrice'])
         last_close = float(data['closePrice'])
         diff = current_price - last_close
@@ -71,34 +67,10 @@ def get_market_data():
         
         return current_price, diff, pct, last_close
     except Exception as e:
-        # 如果 API 失敗，退而求其次使用備援數據（避免 App 崩潰）
+        # 備援數據 (2026/4/21 盤後參考值)
         return 37605.0, 350.0, 0.94, 37255.0
 
-def tw_metric(label, value_str, delta_num, pct_num):
-    """
-    修正點：直接傳入數字 (delta_num, pct_num) 進行邏輯判斷
-    """
-    is_positive = delta_num >= 0
-    color = "#FF4B4B" if is_positive else "#00FF00"  # 確保紅漲綠跌
-    arrow = "▲" if is_positive else "▼"
-    
-    st.markdown(f"""
-        <div style="background-color: #1E2028; padding: 18px; border-radius: 12px; border: 1px solid #3e4249; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-            <p style="margin: 0; color: #A0A4B8; font-size: 0.9rem; letter-spacing: 1px;">{label}</p>
-            <h2 style="margin: 8px 0; color: white; font-size: 2.2rem; font-family: sans-serif;">{value_str}</h2>
-            <p style="margin: 0; color: {color}; font-size: 1.2rem; font-weight: bold;">
-                {arrow} {delta_num:+.0f} ({pct_num:+.2f}%)
-            </p>
-        </div>
-    """, unsafe_allow_html=True)
-# --- App 呈現 ---
-st.title("🚀 2026 盤前精準預測 (熱血紅修正版)")
-
 def get_win_probability(pct):
-    """
-    根據歷史經驗的簡易機率模型：
-    夜盤漲幅越大，今日收紅機率越高
-    """
     if pct > 1.2: return 95, "極度樂觀", "#FF4B4B"
     elif 0.5 < pct <= 1.2: return 80, "偏多上漲", "#FF4B4B"
     elif 0.1 < pct <= 0.5: return 65, "震盪偏多", "#FF4B4B"
@@ -112,7 +84,7 @@ def tw_metric_optimized(label, value_str, delta_num, pct_num, is_probability=Fal
     main_color = p_color if is_probability else ("#FF4B4B" if is_positive else "#00FF00")
     arrow = "▲" if is_positive else "▼"
     
-    # 關鍵修正：固定 min-height 並使用 Flexbox 垂直置中
+    # 內容切換
     if is_probability:
         content = f"""
             <h1 style="margin: 5px 0; color: {main_color}; font-size: 3.5rem; font-weight: 800;">{value_str}</h1>
@@ -128,6 +100,7 @@ def tw_metric_optimized(label, value_str, delta_num, pct_num, is_probability=Fal
             </p>
         """
 
+    # 渲染 HTML：固定 200px 高度並強制垂直置中
     st.markdown(f"""
         <div style="
             background-color: #1E2028; 
@@ -154,25 +127,23 @@ price, diff, pct, prev_close = get_market_data()
 if price:
     prob, status, p_color = get_win_probability(pct)
     
-    # 設定 columns 間距
+    # 設定並排欄位，gap="medium" 讓視覺更舒服
     col1, col2 = st.columns(2, gap="medium")
     
     with col1:
-        # 左側卡片
         tw_metric_optimized("台指期夜盤即時連動", f"{price:,.0f}", diff, pct)
     
     with col2:
-        # 右側卡片 (機率)
         tw_metric_optimized("今日台股收紅機率", f"{prob}%", diff, pct, 
                             is_probability=True, status_text=status, p_color=p_color)
 
-    st.write("###") # 撐開間距
+    st.write("###") # 垂直空隙
     
-    # 底部資訊欄
+    # 底部資訊診斷筆記
     st.info(f"💡 **診斷筆記**：目前夜盤顯示 {status}，點數變動 {diff:+.0f} 點。基準收盤點位為 {prev_close:,.0f}。")
     st.caption("🎨 視覺優化版：已鎖定紅漲綠跌邏輯與容器對齊 (Min-Height: 200px)")
 else:
-    st.error("系統封包遺失，請重新整理頁面。")
+    st.error("數據連線異常，請檢查網路或 API 狀態。")
 # ==============================================================================
 # 第二部分：【互動對話視窗 (Dialogs)】 - UI 彈窗功能定義
 # ==============================================================================
