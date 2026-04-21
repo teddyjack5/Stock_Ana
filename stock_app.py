@@ -51,8 +51,26 @@ def hash_password(password):
 
 st.markdown("""
     <style>
-    [data-testid="stMetricDelta"] > div[direction="up"] { color: #FF4B4B !important; }
-    [data-testid="stMetricDelta"] > div[direction="down"] { color: #00FF00 !important; }
+    /* 1. 處理上漲 (Up) 的顏色：強制改為台股紅 */
+    [data-testid="stMetricDelta"] div[data-status="success"] {
+        color: #FF4B4B !important;
+    }
+    [data-testid="stMetricDelta"] svg[title="Increase"] {
+        fill: #FF4B4B !important;
+    }
+
+    /* 2. 處理下跌 (Down) 的顏色：強制改為台股綠 */
+    [data-testid="stMetricDelta"] div[data-status="error"] {
+        color: #00FF00 !important;
+    }
+    [data-testid="stMetricDelta"] svg[title="Decrease"] {
+        fill: #00FF00 !important;
+    }
+
+    /* 3. 額外保險：如果上面的屬性失效，直接針對文字顏色進行全域覆蓋 */
+    div[data-testid="stMetricDelta"] > div:first-child {
+        color: inherit !important; 
+    }
     </style>
     """, unsafe_allow_html=True)
 
