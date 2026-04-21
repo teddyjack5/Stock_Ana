@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from FinMind.data import DataLoader
 from plotly.subplots import make_subplots
 from streamlit_gsheets import GSheetsConnection
+from bs4 import BeautifulSoup
 
 # ==============================================================================
 # 第一部分：【雲端基礎設施】 - 處理 Google Sheets 連線與資料存取
@@ -47,6 +48,50 @@ def hash_password(password):
     if not password:
         return None
     return hashlib.sha256(password.encode()).hexdigest()
+
+def get_realtime_futures():
+    """自動抓取台指期即時報價 (以 Yahoo 股市為例)"""
+    try:
+        # 台指期近月代號在 Yahoo 通常是 WTX& (需視情況調整)
+        url = "https://tw.stock.yahoo.com/quote/%5ETWII" # 這裡以加權指數示範，實務上可抓期貨頁面
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # 抓取價格與漲跌幅 (這裡需根據網頁結構定位 CSS Selector)
+        # 假設我們抓取的是當前最新價格
+        price = soup.find('span', {'class': 'Fz(32px)'}).text.replace(',', '')
+        change_pct = soup.find('span', {'class': 'Fz(20px)'}).text
+        
+        return float(price), change_pct
+    except Exception as e:
+        return None, str(e)
+
+# --- 在 App 中的實作 ---
+st.subheader("🤖 自動化盤前預測系統")
+
+# 模擬從 API 或爬蟲抓到的夜盤數據
+# 實務上建議抓取：1. 台指期夜盤收盤 2. 台積電 ADR 漲跌
+night_price, error = get_realtime_futures()
+
+if night_price:
+    # 假設昨日日盤收盤 (這部分可以從你的 Google Sheets 歷史資料讀取)
+    last_day_close = 20000.0 
+    
+    diff = night_price - last_day_close
+    predict_pct = (diff / last_day_close) * 100
+    
+    # UI 呈現
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("當前/夜盤點位", f"{night_price:,.0f}", f"{diff:+.0f}")
+    with col2:
+        st.metric("預估早盤漲跌", f"{predict_pct:+.2f}%")
+        
+    # 00631L 連動試算
+    st.info(f"📊 **00631L 預估開盤價**：約為昨日收盤價 × {1 + (predict_pct*2/100):.4f}")
+else:
+    st.warning("暫時無法自動取得即時數據，請檢查網路連線。")
 
 # ==============================================================================
 # 第二部分：【互動對話視窗 (Dialogs)】 - UI 彈窗功能定義
