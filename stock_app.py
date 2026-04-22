@@ -12,6 +12,98 @@ from FinMind.data import DataLoader
 from plotly.subplots import make_subplots
 from streamlit_gsheets import GSheetsConnection
 from bs4 import BeautifulSoup
+from datetime import datetime, timedelta
+
+dl = DataLoader()
+
+def get_screener_data(stock_list):
+    """
+    核心選股邏輯：輸入股票清單，輸出評分報表
+    """
+    results = []
+    progress_bar = st.progress(0)
+    
+    for i, sid in enumerate(stock_list):
+        try:
+            # 1. 抓取技術面 (yfinance)
+            ticker = yf.Ticker(f"{sid}.TW")
+            df = ticker.history(period="6mo")
+            if df.empty: continue
+            
+            # 計算均線與指標
+            df['MA5'] = df['Close'].rolling(5).mean()
+            df['MA20'] = df['Close'].rolling(20).mean()
+            df['MA60'] = df['Close'].rolling(60).mean()
+            current_price = df['Close'].iloc[-1]
+            volume_ratio = df['Volume'].iloc[-1] / df['Volume'].rolling(5).mean().iloc[-1]
+            
+            # 2. 抓取籌碼面 (FinMind)
+            chip_df = dl.taiwan_stock_holding_shares_per(
+                stock_id=sid, 
+                start_date=(datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+            )
+            # 這裡簡化邏輯：假設近期大戶持股增加為加分
+            chip_score = 1 if len(chip_df) > 1 and chip_df['holding_shares'].iloc[-1] > chip_df['holding_shares'].iloc[0] else 0
+            
+            # 3. 評分系統 (量化權重)
+            score = 0
+            signals = []
+            
+            # 趨勢分 (40%)
+            if df['MA5'].iloc[-1] > df['MA20'].iloc[-1] > df['MA60'].iloc[-1]:
+                score += 40
+                signals.append("🔥 多頭排列")
+            
+            # 動能分 (30%)
+            if volume_ratio > 1.5:
+                score += 30
+                signals.append("⚡ 成交量激增")
+            
+            # 支撐分 (30%)
+            if current_price > df['MA20'].iloc[-1] and current_price < df['MA5'].iloc[-1] * 1.02:
+                score += 30
+                signals.append("🛡️ 縮回支撐")
+            
+            results.append({
+                "股票代號": sid,
+                "目前股價": round(current_price, 2),
+                "量增比": round(volume_ratio, 2),
+                "綜合評分": score,
+                "特徵分析": " | ".join(signals) if signals else "觀望"
+            })
+        except:
+            continue
+        progress_bar.progress((i + 1) / len(stock_list))
+    
+    return pd.DataFrame(results).sort_values("綜合評分", ascending=False)
+
+# --- Streamlit UI 介面 ---
+def show_screener():
+    st.header("🎯 小鐵選股雷達 (2026 專業版)")
+    st.info("本系統利用技術面趨勢 + 爆量因子進行掃描，適合找尋「起漲點」標的。")
+
+    # 預設掃描清單 (可以自訂，或從你的 active_list 讀取)
+    scan_targets = ["2330", "2356", "2317", "2454", "2603", "1605", "1513", "1519"]
+    
+    if st.button("🚀 開始全自動掃描選股"):
+        with st.spinner("SIT 數據引擎計算中..."):
+            report = get_screener_data(scan_targets)
+            
+            # 美化表格輸出
+            def color_score(val):
+                color = '#FF4B4B' if val >= 70 else ('#FFA500' if val >= 40 else '#A0A4B8')
+                return f'color: {color}; font-weight: bold'
+
+            st.write("### 📊 掃描結果報告")
+            st.dataframe(
+                report.style.applymap(color_score, subset=['綜合評分']),
+                use_container_width=True
+            )
+            
+            # 推薦亮點
+            top_pick = report.iloc[0]
+            if top_pick['綜合評分'] >= 70:
+                st.success(f"🎊 發現優質標的：**{top_pick['股票代號']}**，得分 {top_pick['綜合評分']}！符合強勢起漲特徵。")
 
 # ==============================================================================
 # 第一部分：【雲端基礎設施】 - 處理 Google Sheets 連線與資料存取
