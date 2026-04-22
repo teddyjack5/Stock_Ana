@@ -52,37 +52,17 @@ def hash_password(password):
 
 def get_market_data():
     try:
-        # 使用即時報價 API 接口，加上隨機參數避免快取
-        # 這裡改用 quotes 接口，它對「昨收」的定義在清晨時段最穩定
-        timestamp = int(time.time() * 1000)
-        url = f"https://www.wantgoo.com/investor/api/quotes?stockNo=WTX%26&_={timestamp}"
+        # 抓取台指期近月 (Yahoo Finance 代碼)
+        ticker = yf.Ticker("WTX=F")
+        df = ticker.history(period="2d")
         
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://www.wantgoo.com/'
-        }
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        # 玩股網 quotes API 回傳的是一個清單
-        json_data = response.json()
-        
-        # 取得第一筆資料 (台指期近月)
-        data = json_data[0]
-        
-        # 最新價格
-        current_price = float(data['deal'])
-        # 基準收盤價 (昨收)
-        last_close = float(data['lastClose'])
-        
-        # 如果發現 API 的昨收還是前天的，這裡做一個 SIT 備援檢查
-        # 通常 lastClose 欄位在此 API 會在夜盤收盤後正確保留日盤收盤價
-        
-        diff = current_price - last_close
-        pct = (diff / last_close) * 100
-        
-        return current_price, diff, pct, last_close
-    except Exception as e:
-        # 萬一 API 結構有變，回傳備援數據
+        if len(df) >= 2:
+            current_price = df['Close'].iloc[-1]
+            last_close = df['Close'].iloc[-2]
+            diff = current_price - last_close
+            pct = (diff / last_close) * 100
+            return current_price, diff, pct, last_close
+    except:
         return 37605.0, 350.0, 0.94, 37255.0
 
 # 2. 機率模型
