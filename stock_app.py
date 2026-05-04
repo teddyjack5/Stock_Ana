@@ -14,6 +14,84 @@ from streamlit_gsheets import GSheetsConnection
 from bs4 import BeautifulSoup
 
 # =========================
+# 🎯 TRADINGVIEW UI THEME LAYER (NEW)
+# =========================
+
+st.set_page_config(page_title="小鐵 Trading Terminal", layout="wide")
+
+st.markdown("""
+<style>
+
+/* ===== GLOBAL DARK THEME ===== */
+html, body, [class*="css"]  {
+    background-color: #0B0F14;
+    color: #E6E6E6;
+}
+
+/* ===== MAIN CONTAINER ===== */
+.block-container {
+    padding-top: 1rem;
+    padding-bottom: 2rem;
+}
+
+/* ===== SIDEBAR ===== */
+section[data-testid="stSidebar"] {
+    background-color: #0F1620;
+    border-right: 1px solid #1F2A36;
+}
+
+/* ===== CARD STYLE ===== */
+.trading-card {
+    background: #111826;
+    border: 1px solid #1F2A36;
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.3);
+}
+
+/* ===== METRICS ===== */
+[data-testid="stMetric"] {
+    background: #111826;
+    border-radius: 12px;
+    padding: 12px;
+    border: 1px solid #1F2A36;
+}
+
+/* ===== BUTTON ===== */
+.stButton>button {
+    background: linear-gradient(90deg,#2962FF,#00C2FF);
+    color: white;
+    border-radius: 10px;
+    border: none;
+    font-weight: 600;
+}
+
+/* ===== TABLE ===== */
+thead tr th {
+    background-color: #111826 !important;
+    color: #E6E6E6 !important;
+}
+
+tbody tr {
+    background-color: #0B0F14;
+}
+
+/* ===== EXPANDER ===== */
+.streamlit-expanderHeader {
+    background-color: #111826;
+    border-radius: 10px;
+}
+
+/* ===== TITLE ===== */
+h1, h2, h3 {
+    color: #E6E6E6;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+
+# =========================
 # 🚀 專業級效能優化模組
 # =========================
 
@@ -973,7 +1051,6 @@ if show_news and ticker_input:
                     st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
         else: st.info("⚠️ 近期暫無相關新聞。")
     except: pass
-
 
 
 
