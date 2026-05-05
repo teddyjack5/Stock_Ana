@@ -513,6 +513,9 @@ col_summary, col_chart = st.columns([3, 7])
 # 📊 左側：資產儀表卡
 # =============================
 with col_summary:
+    profit_str = f"{'+' if profit > 0 else ''}{int(profit):,}"
+    roi_str = f"{roi:.2f}%"
+
     st.markdown(f"""
     <div style="
         background: #131722;
@@ -524,6 +527,7 @@ with col_summary:
         flex-direction: column;
         justify-content: space-between;
     ">
+
         <div>
             <p style="color:#9BA3AF; font-size:13px; margin:0;">總資產</p>
             <h2 style="color:white; margin:5px 0;">NT$ {int(total_value):,}</h2>
@@ -532,14 +536,17 @@ with col_summary:
         <div style="padding:15px 0; border-top:1px solid #2A2E39; border-bottom:1px solid #2A2E39;">
             <p style="color:#9BA3AF; font-size:13px; margin:0;">未實現損益</p>
             <h1 style="color:{p_color}; margin:5px 0;">
-                {"+" if profit > 0 else ""}{int(profit):,}
+                {profit_str}
             </h1>
         </div>
 
         <div>
             <p style="color:#9BA3AF; font-size:13px; margin:0;">報酬率</p>
-            <h2 style="color:{p_color}; margin:5px 0;">{roi:.2f}%</h2>
+            <h2 style="color:{p_color}; margin:5px 0;">
+                {roi_str}
+            </h2>
         </div>
+
     </div>
     """, unsafe_allow_html=True)
 
