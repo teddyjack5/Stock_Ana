@@ -12,8 +12,43 @@ from FinMind.data import DataLoader
 from plotly.subplots import make_subplots
 from streamlit_gsheets import GSheetsConnection
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
 
+# ==============================================================================
+# 【新增效能優化】 - 集中式快取管理 (解決介面卡頓)
+# ==============================================================================
+@st.cache_data(ttl=300) # 快取 5 分鐘，避免頻繁呼叫 yfinance
+def fetch_yf_data_cached(ticker, period=None, interval=None, start=None):
+    if start:
+        return yf.download(ticker, start=start, progress=False)
+    return yf.download(ticker, period=period, interval=interval, progress=False)
+
+@st.cache_data(ttl=3600) # 法人籌碼一天只會更新一次，快取 1 小時
+def fetch_chip_data_cached(stock_id):
+    dl_cache = DataLoader()
+    try:
+        if "FINMIND_TOKEN" in st.secrets:
+            dl_cache.set_token(token=st.secrets["FINMIND_TOKEN"])
+        return dl_cache.taiwan_stock_institutional_investors(
+            stock_id=stock_id.split('.')[0],
+            start_date=(datetime.now()-timedelta(days=10)).strftime('%Y-%m-%d')
+        )
+    except:
+        return pd.DataFrame()
+
+@st.cache_data(ttl=3600) # 新聞快取 1 小時
+def fetch_news_data_cached(stock_id):
+    dl_cache = DataLoader()
+    try:
+        if "FINMIND_TOKEN" in st.secrets:
+            dl_cache.set_token(token=st.secrets["FINMIND_TOKEN"])
+        return dl_cache.taiwan_stock_news(
+            stock_id=stock_id.split('.')[0], 
+            start_date=(datetime.now() - timedelta(days=5)).strftime('%Y-%m-%d')
+        )
+    except:
+        return pd.DataFrame()
+
+# 初始化 DataLoader (用於其他未快取的輕量操作)
 dl = DataLoader()
 
 def get_screener_data(stock_list):
@@ -79,7 +114,7 @@ def get_screener_data(stock_list):
 
 # --- Streamlit UI 介面 ---
 def show_screener():
-    st.header("🎯 小鐵選股雷達 (2026 專業版)")
+    st.header("🎯 小鐵選股雷達 ")
     st.info("本系統利用技術面趨勢 + 爆量因子進行掃描，適合找尋「起漲點」標的。")
 
     # 預設掃描清單 (可以自訂，或從你的 active_list 讀取)
@@ -157,14 +192,14 @@ def show_full_portfolio_report(active_costs, active_list):
     with st.spinner("正在獲取最新報價..."):
         for t_code, info in active_costs.items():
             try:
-                tick = yf.Ticker(t_code)
-                df_recent = tick.history(period="1d")
+                # 使用快取取代原本的 yf.Ticker
+                df_recent = fetch_yf_data_cached(t_code, period="1d", interval="1d")
                 if df_recent.empty: continue
                 
                 c_price = df_recent['Close'].iloc[-1]
                 name = active_list.get(t_code, "未知")
-                cost = info['cost']
-                qty = info['qty']
+                cost = float(info['cost']) if isinstance(info, dict) else float(info)
+                qty = float(info['qty']) if isinstance(info, dict) else 0.0
                 
                 total_cost = cost * qty * 1000
                 market_value = c_price * qty * 1000
@@ -188,7 +223,7 @@ def show_full_portfolio_report(active_costs, active_list):
         try:
             val = float(v)
             if val > 0: return 'color: #FF4B4B' # 紅色
-            if val < 0: return 'color: #00B050' # 綠色
+            if val < 0: return 'color: #26A69A' # 【UI優化】改用波斯綠
         except (ValueError, TypeError):
             pass
         return 'color: white'
@@ -312,7 +347,7 @@ def show_annual_report_dialog():
     def color_pnl(val):
         if isinstance(val, (int, float)):
             if val > 0: return 'color: #FF4B4B'
-            if val < 0: return 'color: #00B050'
+            if val < 0: return 'color: #26A69A' # 【UI優化】改用波斯綠
         return 'color: white'
 
     st.subheader("📊 年度數據摘要")
@@ -336,7 +371,7 @@ def show_annual_report_dialog():
             })
             st.dataframe(styled_df, hide_index=True, use_container_width=True)
 
-# 6. 策略模擬回測工具
+# 6. 策略模擬回測工具 【優化：加入 MDD 水下曲線】
 @st.dialog("🧪 投資策略模擬回測", width="large")
 def backtest_dialog(ticker):
     st.write(f"### 模擬標的：{ticker}")
@@ -348,7 +383,8 @@ def backtest_dialog(ticker):
     st.divider()
     
     with st.spinner("數據計算中..."):
-        data = yf.download(ticker, start=start_date, progress=False)
+        # 【效能優化】改用快取函數
+        data = fetch_yf_data_cached(ticker, start=start_date)
         if data.empty:
             st.error("無法取得歷史數據。")
             return
@@ -388,10 +424,15 @@ def backtest_dialog(ticker):
         c3.metric("年化報酬率", f"{cagr:.2f}%")
         c4.metric("最大跌幅 (MDD)", f"{mdd:.2f}%", delta_color="inverse")
 
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df_res["日期"], y=df_res["累計投入"], name="成本線", line=dict(color='gray', dash='dot')))
-        fig.add_trace(go.Scatter(x=df_res["日期"], y=df_res["當前市值"], name="價值走勢", fill='tozeroy', line=dict(color='#FF4B4B' if total_profit > 0 else '#00B050')))
+        # 【圖表優化】加入雙 Y 軸與 MDD 水下圖
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.add_trace(go.Scatter(x=df_res["日期"], y=df_res["累計投入"], name="成本線", line=dict(color='gray', dash='dot')), secondary_y=False)
+        fig.add_trace(go.Scatter(x=df_res["日期"], y=df_res["當前市值"], name="價值走勢", fill='tozeroy', line=dict(color='#FF4B4B' if total_profit > 0 else '#26A69A')), secondary_y=False)
+        fig.add_trace(go.Scatter(x=df_res["日期"], y=df_res['drawdown'] * 100, name="回撤幅度(%)", fill='tozeroy', line=dict(color='rgba(255, 82, 82, 0.3)', width=1)), secondary_y=True)
+        
         fig.update_layout(title=f"{ticker} {years}年績效 (CAGR: {cagr:.1f}% / MDD: {mdd:.1f}%)", template="plotly_dark")
+        fig.update_yaxes(title_text="資產市值", secondary_y=False)
+        fig.update_yaxes(title_text="回撤幅度 %", secondary_y=True, showgrid=False)
         st.plotly_chart(fig, use_container_width=True)
 
 # ==============================================================================
@@ -405,9 +446,8 @@ if 'selected_ticker' not in st.session_state: st.session_state.selected_ticker =
 if 'temp_ticker' not in st.session_state: st.session_state.temp_ticker = None
 
 # API Token 設定
-FINMIND_TOKEN = st.secrets["FINMIND_TOKEN"]
-GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-dl = DataLoader()
+FINMIND_TOKEN = st.secrets.get("FINMIND_TOKEN", "")
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 try: dl.set_token(token=FINMIND_TOKEN)
 except: pass
 
@@ -450,8 +490,10 @@ if not is_authenticated:
 # 側邊欄：進階設定與存檔
 with st.sidebar.expander("⚙️ 進階設定"):
     if st.button("♻️ 強制刷新雲端數據"):
+        # 清除所有快取
+        st.cache_data.clear()
         st.session_state.db = load_db_from_sheets()
-        st.toast("已同步最新數據")
+        st.toast("已同步最新數據並清除快取")
     if st.button("💾 手動存檔至雲端"):
         save_db_to_sheets(st.session_state.db)
         st.success("存檔完成")
@@ -459,106 +501,7 @@ with st.sidebar.expander("⚙️ 進階設定"):
 # 庫存資產總覽卡片
 active_list = st.session_state.db["list"]
 active_costs = st.session_state.db["costs"]
-total_cost, total_value = 0.0, 0.0
 
-# 用來存放計算結果，避免重複下載
-processed_data = []
-
-if active_costs:
-    with st.spinner("正在同步雲端數據並計算總資產..."):
-        for t_code, info in active_costs.items():
-            try:
-                # 關鍵修正 1：使用 1m 間隔強制抓取今日最新點位
-                temp_df = yf.download(t_code, period="5d", interval="1m", progress=False)
-                
-                if not temp_df.empty:
-                    # 關鍵修正 2：處理可能的多重索引
-                    if isinstance(temp_df.columns, pd.MultiIndex):
-                        temp_df.columns = temp_df.columns.get_level_values(0)
-                    
-                    # 關鍵修正 3：取最後一個非 NaN 的價格（這就是現在的即時價）
-                    valid_close = temp_df['Close'].dropna()
-                    if not valid_close.empty:
-                        c_price = float(valid_close.iloc[-1])
-                        
-                        # 處理庫存資料格式 (保持原樣)
-                        c = float(info['cost']) if isinstance(info, dict) else float(info)
-                        q = float(info['qty']) if isinstance(info, dict) else 0.0
-                        
-                        current_market_val = c_price * q * 1000
-                        total_cost += (c * q * 1000)
-                        total_value += current_market_val
-                        
-                        if current_market_val > 0:
-                            processed_data.append({
-                                "label": active_list.get(t_code, t_code),
-                                "value": current_market_val
-                            })
-            except Exception as e:
-                continue
-
-# 計算損益
-profit = total_value - total_cost
-roi = (profit / total_cost * 100) if total_cost > 0 else 0
-p_color = "#FF4B4B" if profit > 0 else ("" if profit < 0 else "#FFFFFF")
-
-st.write("### 🏢 小鐵的雲端投資組合")
-col_summary, col_chart = st.columns([3.0, 7.0])
-
-with col_summary:
-    st.markdown(f"""
-        <div style="
-            background-color: #1e1e1e; padding: 20px; border-radius: 15px; 
-            border-left: 10px solid {p_color}; height: 350px; 
-            display: flex; flex-direction: column; justify-content: space-around;
-        ">
-            <div>
-                <p style="color: gray; margin: 0; font-size: 14px;">資產總市值</p>
-                <h2 style="color: white; margin: 0; font-size: 24px;">NT$ {int(total_value):,}</h2>
-            </div>
-            <div style="border-top: 1px solid #444; border-bottom: 1px solid #444; padding: 15px 0;">
-                <p style="color: gray; margin: 0; font-size: 14px;">預估總損益</p>
-                <h1 style="color: {p_color}; margin: 0; font-size: 32px;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
-            </div>
-            <div>
-                <p style="color: gray; margin: 0; font-size: 14px;">總報酬率</p>
-                <h2 style="color: {p_color}; margin: 0; font-size: 24px;">{roi:.2f}%</h2>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-
-with col_chart:
-    if processed_data:
-        labels = [d['label'] for d in processed_data]
-        values = [d['value'] for d in processed_data]
-        
-        fig_pie = go.Figure(data=[go.Pie(
-            labels=labels, 
-            values=values, 
-            hole=.4,
-            textinfo='label+percent', 
-            textposition='inside',
-            marker=dict(line=dict(color='#1e1e1e', width=2))
-        )])
-        
-        fig_pie.update_layout(
-            showlegend=False, 
-            template="plotly_dark",
-            margin=dict(t=10, b=10, l=10, r=10),
-            height=380,
-        )
-        st.plotly_chart(fig_pie, use_container_width=True)
-# 顯示下方的智慧點評 (跨欄顯示)
-if 'values' in locals() and values:
-    max_idx = values.index(max(values))
-    max_stock = labels[max_idx]
-    max_pct = (values[max_idx] / sum(values)) * 100
-    
-    if max_pct > 50:
-        st.warning(f"⚠️ **小鐵提醒**：您的資金高度集中在 **{max_stock}** ({max_pct:.1f}%)。若該股波動較大，將顯著影響總資產水位。")
-    else:
-        st.info(f"✅ **小鐵點評**：資產配置比例健康。目前以 **{max_stock}** 為核心持股。")
-        
 # 側邊欄：功能按鈕區
 st.sidebar.subheader("⚙️ 庫存管理")
 if st.sidebar.button("➕ 新增股票項目", use_container_width=True): add_stock_dialog() 
@@ -617,6 +560,13 @@ if st.sidebar.button("💾 儲存帳務修改", use_container_width=True):
 show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
 
 # ==============================================================================
+# 【新增 UI 優化】 - st.tabs 模組化分頁架構
+# ==============================================================================
+tab_portfolio, tab_analysis, tab_screener, tab_news = st.tabs([
+    "🏢 庫存總覽", "📈 個股深度分析", "🎯 策略選股雷達", "📰 產經動態"
+])
+
+# ==============================================================================
 # 第四部分：【技術指標與數據分析】 - 計算公式與資料抓取
 # ==============================================================================
 def calculate_rsi(df, periods=14):
@@ -636,428 +586,513 @@ def calculate_atr(df, window=14):
     tr = pd.concat([df['High']-df['Low'], (df['High']-df['Close'].shift()).abs(), (df['Low']-df['Close'].shift()).abs()], axis=1).max(axis=1)
     return tr.rolling(window=window).mean()
 
-def get_foreign_holding(stock_id):
-    url = "https://api.finmindtrade.com/api/v4/data"
-    params = {"dataset": "TaiwanStockHoldingSharesPer", "data_id": stock_id.split('.')[0], 
-              "start_date": (datetime.now()-timedelta(days=180)).strftime('%Y-%m-%d'), "token": FINMIND_TOKEN}
-    try:
-        data = requests.get(url, params=params).json().get("data", [])
-        return pd.DataFrame(data).assign(date=lambda x: pd.to_datetime(x['date'])) if data else pd.DataFrame()
-    except: return pd.DataFrame()
 
-def get_monthly_revenue(stock_id):
-    url = "https://api.finmindtrade.com/api/v4/data"
-    params = {"dataset": "TaiwanStockMonthRevenue", "data_id": stock_id.split('.')[0], 
-              "start_date": (datetime.now()-timedelta(days=730)).strftime('%Y-%m-%d'), "token": FINMIND_TOKEN}
-    try:
-        data = requests.get(url, params=params).json().get("data", [])
-        if not data: return pd.DataFrame()
-        df = pd.DataFrame(data)
-        df['date'] = pd.to_datetime(df['revenue_year'].astype(str) + '-' + df['revenue_month'].astype(str) + '-01')
-        return df.sort_values('date')
-    except: return pd.DataFrame()
+# ==============================================================================
+# Tab 1: 庫存總覽 (移入 Tab)
+# ==============================================================================
+with tab_portfolio:
+    total_cost, total_value = 0.0, 0.0
+    processed_data = []
 
- ##=============================
-# 🎨 TradingView UI 強化
-# =============================
-st.markdown("""
-<style>
-.card {
-    background-color: #131722;
-    padding: 14px;
-    border-radius: 10px;
-    border: 1px solid #2A2E39;
-}
-.metric-title { color: #9BA3AF; font-size: 12px; }
-.metric-value { font-size: 22px; font-weight: 600; }
-.up { color: #FF4B4B; }
-.down { color: #00B050; }
-.section-title {
-    font-size: 18px;
-    font-weight: 600;
-    margin-top: 10px;
-}
-</style>
-""", unsafe_allow_html=True)
+    if active_costs:
+        with st.spinner("正在同步雲端數據並計算總資產..."):
+            for t_code, info in active_costs.items():
+                try:
+                    # 【效能優化】使用快取取代每次都要重新下載
+                    temp_df = fetch_yf_data_cached(t_code, period="5d", interval="1m")
+                    
+                    if not temp_df.empty:
+                        if isinstance(temp_df.columns, pd.MultiIndex):
+                            temp_df.columns = temp_df.columns.get_level_values(0)
+                        
+                        valid_close = temp_df['Close'].dropna()
+                        if not valid_close.empty:
+                            c_price = float(valid_close.iloc[-1])
+                            
+                            c = float(info['cost']) if isinstance(info, dict) else float(info)
+                            q = float(info['qty']) if isinstance(info, dict) else 0.0
+                            
+                            current_market_val = c_price * q * 1000
+                            total_cost += (c * q * 1000)
+                            total_value += current_market_val
+                            
+                            if current_market_val > 0:
+                                processed_data.append({
+                                    "label": active_list.get(t_code, t_code),
+                                    "value": current_market_val
+                                })
+                except Exception as e:
+                    continue
 
-# 防呆
-df_chip = pd.DataFrame()
+    # 計算損益
+    profit = total_value - total_cost
+    roi = (profit / total_cost * 100) if total_cost > 0 else 0
+    p_color = "#FF4B4B" if profit > 0 else ("" if profit < 0 else "#FFFFFF")
 
-if ticker_input:
+    st.write("### 🏢 小鐵的雲端投資組合")
+    col_summary, col_chart = st.columns([3.0, 7.0])
 
-    f_period = "2d" if period == "1d" else period
-    f_interval = "1m" if period in ["1d", "5d"] else "1d"
-
-    data = yf.download(ticker_input, period=f_period, interval=f_interval, progress=False)
-
-    if not data.empty:
-
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-
-        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-            if col in data.columns:
-                data[col] = pd.to_numeric(data[col], errors='coerce')
-
-        data = data.ffill()
-        data = data.dropna(subset=['Close'])
-
-        # ===== 指標 =====
-        data['MACD'], data['Signal'], data['Hist'] = calculate_macd(data)
-        data['ATR'] = calculate_atr(data)
-        data['RSI'] = calculate_rsi(data)
-        data['MA5'] = data['Close'].rolling(5).mean()
-        data['MA20'] = data['Close'].rolling(20).mean()
-        data['MA60'] = data['Close'].rolling(60).mean()
-        data['ATR_Trailing'] = data['Close'].rolling(20).max() - (data['ATR'] * 2)
-
-        curr = data.iloc[-1]
-        prev = data.iloc[-2] if len(data) > 1 else curr
-        price = float(curr['Close'])
-
-        # =============================
-        # 💰 持倉卡片
-        # =============================
-        if ticker_input in active_costs:
-            st.markdown('<div class="section-title">💰 持倉分析</div>', unsafe_allow_html=True)
-
-            info = active_costs[ticker_input]
-            c = float(info['cost']) if isinstance(info, dict) else float(info)
-            q = float(info['qty']) if isinstance(info, dict) else 1.0
-
-            pft = (price*q*1000)-(c*q*1000)
-            pft_r = (pft/(c*q*1000))*100 if c>0 else 0
-
-            cols = st.columns(4)
-
-            def card(col, title, val, updown=None):
-                cls = "up" if updown == "up" else "down" if updown == "down" else ""
-                col.markdown(f"""
-                <div class="card">
-                    <div class="metric-title">{title}</div>
-                    <div class="metric-value {cls}">{val}</div>
+    with col_summary:
+        st.markdown(f"""
+            <div style="
+                background-color: #1e1e1e; padding: 20px; border-radius: 15px; 
+                border-left: 10px solid {p_color}; height: 350px; 
+                display: flex; flex-direction: column; justify-content: space-around;
+            ">
+                <div>
+                    <p style="color: gray; margin: 0; font-size: 14px;">資產總市值</p>
+                    <h2 style="color: white; margin: 0; font-size: 24px;">NT$ {int(total_value):,}</h2>
                 </div>
-                """, unsafe_allow_html=True)
-
-            card(cols[0], "損益", f"{int(pft):,} ({pft_r:.2f}%)", "up" if pft>0 else "down")
-            card(cols[1], "成本", f"{c:.2f}")
-            card(cols[2], "投入", f"{int(c*q*1000):,}")
-            card(cols[3], "市值", f"{int(price*q*1000):,}")
-
-        # =============================
-        # 📊 即時概況（卡片化）
-        # =============================
-        st.markdown(f'<div class="section-title">📊 {ticker_input} 即時數據</div>', unsafe_allow_html=True)
-
-        cols = st.columns(6)
-        metrics = [
-            ("價格", f"{price:.2f}", price > prev['Close']),
-            ("60H", f"{data['High'].tail(60).max():.2f}", None),
-            ("MA5", f"{curr['MA5']:.2f}", None),
-            ("MA20", f"{curr['MA20']:.2f}", None),
-            ("MA60", f"{curr['MA60']:.2f}", None),
-            ("RSI", f"{curr['RSI']:.1f}", None),
-        ]
-
-        for col, (t, v, trend) in zip(cols, metrics):
-            cls = "up" if trend else "down" if trend==False else ""
-            col.markdown(f"""
-            <div class="card">
-                <div class="metric-title">{t}</div>
-                <div class="metric-value {cls}">{v}</div>
+                <div style="border-top: 1px solid #444; border-bottom: 1px solid #444; padding: 15px 0;">
+                    <p style="color: gray; margin: 0; font-size: 14px;">預估總損益</p>
+                    <h1 style="color: {p_color}; margin: 0; font-size: 32px;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
+                </div>
+                <div>
+                    <p style="color: gray; margin: 0; font-size: 14px;">總報酬率</p>
+                    <h2 style="color: {p_color}; margin: 0; font-size: 24px;">{roi:.2f}%</h2>
+                </div>
             </div>
-            """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-        # =============================
-        # 👥 法人籌碼
-        # =============================
-        try:
-            df_chip = dl.taiwan_stock_institutional_investors(
-                stock_id=ticker_input.split('.')[0],
-                start_date=(datetime.now()-timedelta(days=10)).strftime('%Y-%m-%d')
+    with col_chart:
+        if processed_data:
+            labels = [d['label'] for d in processed_data]
+            values = [d['value'] for d in processed_data]
+            
+            fig_pie = go.Figure(data=[go.Pie(
+                labels=labels, 
+                values=values, 
+                hole=.4,
+                textinfo='label+percent', 
+                textposition='inside',
+                marker=dict(line=dict(color='#1e1e1e', width=2))
+            )])
+            
+            fig_pie.update_layout(
+                showlegend=False, 
+                template="plotly_dark",
+                margin=dict(t=10, b=10, l=10, r=10),
+                height=380,
             )
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
+    # 顯示下方的智慧點評 (跨欄顯示)
+    if 'values' in locals() and values:
+        max_idx = values.index(max(values))
+        max_stock = labels[max_idx]
+        max_pct = (values[max_idx] / sum(values)) * 100
+        
+        if max_pct > 50:
+            st.warning(f"⚠️ **小鐵提醒**：您的資金高度集中在 **{max_stock}** ({max_pct:.1f}%)。若該股波動較大，將顯著影響總資產水位。")
+        else:
+            st.info(f"✅ **小鐵點評**：資產配置比例健康。目前以 **{max_stock}** 為核心持股。")
 
-            if not df_chip.empty:
-                last_day = df_chip['date'].iloc[-1]
-                day_data = df_chip[df_chip['date'] == last_day]
+# ==============================================================================
+# Tab 2: 個股深度分析 (移入 Tab 且更新 UI)
+# ==============================================================================
+with tab_analysis:
+    # 🎨 TradingView UI 強化 【優化：注入專業波斯綠 #26A69A 與 hover 效果】
+    st.markdown("""
+    <style>
+    .card {
+        background-color: #131722;
+        padding: 16px;
+        border-radius: 12px;
+        border: 1px solid #2A2E39;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        transition: transform 0.2s, border-color 0.2s;
+    }
+    .card:hover {
+        transform: translateY(-2px);
+        border-color: #26A69A;
+    }
+    .metric-title { color: #9BA3AF; font-size: 12px; }
+    .metric-value { font-size: 22px; font-weight: 600; }
+    .up { color: #FF4B4B; }
+    .down { color: #26A69A; } /* 【UI優化】台股習慣紅色為漲，綠色為跌。改用高質感的波斯綠 */
+    .section-title {
+        font-size: 18px;
+        font-weight: 600;
+        margin-top: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-                f_net = (day_data[day_data['name'].str.contains('Foreign')]['buy'].sum()
-                         - day_data[day_data['name'].str.contains('Foreign')]['sell'].sum()) / 1000
-                d_net = (day_data[day_data['name'] == 'Investment_Trust']['buy'].sum()
-                         - day_data[day_data['name'] == 'Investment_Trust']['sell'].sum()) / 1000
-                s_net = (day_data[day_data['name'].str.contains('Dealer')]['buy'].sum()
-                         - day_data[day_data['name'].str.contains('Dealer')]['sell'].sum()) / 1000
+    df_chip = pd.DataFrame()
 
-                st.markdown('<div class="section-title">👥 法人動向</div>', unsafe_allow_html=True)
-                c1,c2,c3 = st.columns(3)
+    if ticker_input:
+        f_period = "2d" if period == "1d" else period
+        f_interval = "1m" if period in ["1d", "5d"] else "1d"
 
-                for c,l,v in zip([c1,c2,c3],["外資","投信","自營商"],[f_net,d_net,s_net]):
-                    cls = "up" if v>0 else "down"
-                    c.markdown(f"""
+        # 【效能優化】使用快取取代 yf.download
+        data = fetch_yf_data_cached(ticker_input, period=f_period, interval=f_interval)
+
+        if not data.empty:
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.get_level_values(0)
+
+            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                if col in data.columns:
+                    data[col] = pd.to_numeric(data[col], errors='coerce')
+
+            data = data.ffill()
+            data = data.dropna(subset=['Close'])
+
+            # ===== 指標 =====
+            data['MACD'], data['Signal'], data['Hist'] = calculate_macd(data)
+            data['ATR'] = calculate_atr(data)
+            data['RSI'] = calculate_rsi(data)
+            data['MA5'] = data['Close'].rolling(5).mean()
+            data['MA20'] = data['Close'].rolling(20).mean()
+            data['MA60'] = data['Close'].rolling(60).mean()
+            data['ATR_Trailing'] = data['Close'].rolling(20).max() - (data['ATR'] * 2)
+
+            curr = data.iloc[-1]
+            prev = data.iloc[-2] if len(data) > 1 else curr
+            price = float(curr['Close'])
+
+            # =============================
+            # 💰 持倉卡片
+            # =============================
+            if ticker_input in active_costs:
+                st.markdown('<div class="section-title">💰 持倉分析</div>', unsafe_allow_html=True)
+
+                info = active_costs[ticker_input]
+                c = float(info['cost']) if isinstance(info, dict) else float(info)
+                q = float(info['qty']) if isinstance(info, dict) else 1.0
+
+                pft = (price*q*1000)-(c*q*1000)
+                pft_r = (pft/(c*q*1000))*100 if c>0 else 0
+
+                cols = st.columns(4)
+
+                def card(col, title, val, updown=None):
+                    cls = "up" if updown == "up" else "down" if updown == "down" else ""
+                    col.markdown(f"""
                     <div class="card">
-                        <div class="metric-title">{l}</div>
-                        <div class="metric-value {cls}">{int(v):,}</div>
+                        <div class="metric-title">{title}</div>
+                        <div class="metric-value {cls}">{val}</div>
                     </div>
                     """, unsafe_allow_html=True)
 
-                st.caption(f"更新：{last_day}")
+                card(cols[0], "損益", f"{int(pft):,} ({pft_r:.2f}%)", "up" if pft>0 else "down")
+                card(cols[1], "成本", f"{c:.2f}")
+                card(cols[2], "投入", f"{int(c*q*1000):,}")
+                card(cols[3], "市值", f"{int(price*q*1000):,}")
 
-        except:
-            st.error("籌碼抓取失敗")
+            # =============================
+            # 📊 即時概況（卡片化）
+            # =============================
+            st.markdown(f'<div class="section-title">📊 {ticker_input} 即時數據</div>', unsafe_allow_html=True)
 
-        # =============================
-        # 📈 法人趨勢
-        # =============================
-        if not df_chip.empty:
+            cols = st.columns(6)
+            metrics = [
+                ("價格", f"{price:.2f}", price > prev['Close']),
+                ("60H", f"{data['High'].tail(60).max():.2f}", None),
+                ("MA5", f"{curr['MA5']:.2f}", None),
+                ("MA20", f"{curr['MA20']:.2f}", None),
+                ("MA60", f"{curr['MA60']:.2f}", None),
+                ("RSI", f"{curr['RSI']:.1f}", None),
+            ]
 
-            df_chip['net'] = (df_chip['buy'] - df_chip['sell']) / 1000
-            df_trend = df_chip.pivot_table(index='date', columns='name', values='net', aggfunc='sum').fillna(0)
+            for col, (t, v, trend) in zip(cols, metrics):
+                cls = "up" if trend else "down" if trend==False else ""
+                col.markdown(f"""
+                <div class="card">
+                    <div class="metric-title">{t}</div>
+                    <div class="metric-value {cls}">{v}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
-            name_map = {'Foreign_Investor':'外資','Investment_Trust':'投信','Dealer_Self':'自營商(自有)','Dealer_Hedging':'自營商(避險)'}
-            df_trend = df_trend.rename(columns=lambda x: next((v for k,v in name_map.items() if k in x), x))
-            dealer_cols = [c for c in df_trend.columns if '自營商' in c]
-            if dealer_cols:
-                df_trend['自營商'] = df_trend[dealer_cols].sum(axis=1)
-                df_trend = df_trend.drop(columns=dealer_cols, errors='ignore')
+            # =============================
+            # 👥 法人籌碼
+            # =============================
+            try:
+                # 【效能優化】改用快取的 fetch_chip_data_cached
+                df_chip = fetch_chip_data_cached(ticker_input)
 
-            fig_chip = go.Figure()
+                if not df_chip.empty:
+                    last_day = df_chip['date'].iloc[-1]
+                    day_data = df_chip[df_chip['date'] == last_day]
 
-            for label,color in {'外資':'#2962FF','投信':'#FF6D00','自營商':'#00C853'}.items():
-                if label in df_trend.columns:
-                    fig_chip.add_trace(go.Scatter(x=df_trend.index,y=df_trend[label],name=label,line=dict(color=color)))
+                    f_net = (day_data[day_data['name'].str.contains('Foreign')]['buy'].sum()
+                             - day_data[day_data['name'].str.contains('Foreign')]['sell'].sum()) / 1000
+                    d_net = (day_data[day_data['name'] == 'Investment_Trust']['buy'].sum()
+                             - day_data[day_data['name'] == 'Investment_Trust']['sell'].sum()) / 1000
+                    s_net = (day_data[day_data['name'].str.contains('Dealer')]['buy'].sum()
+                             - day_data[day_data['name'].str.contains('Dealer')]['sell'].sum()) / 1000
 
-            fig_chip.update_layout(template="plotly_dark",height=300,hovermode="x unified")
-            st.plotly_chart(fig_chip,use_container_width=True)
+                    st.markdown('<div class="section-title">👥 法人動向</div>', unsafe_allow_html=True)
+                    c1,c2,c3 = st.columns(3)
 
-        # =============================
-        # 📊🔥 合併主圖（TV風格）
-        # =============================
-        st.markdown('<div class="section-title">📊 技術分析</div>', unsafe_allow_html=True)
+                    for c,l,v in zip([c1,c2,c3],["外資","投信","自營商"],[f_net,d_net,s_net]):
+                        cls = "up" if v>0 else "down"
+                        c.markdown(f"""
+                        <div class="card">
+                            <div class="metric-title">{l}</div>
+                            <div class="metric-value {cls}">{int(v):,}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
 
-        fig = make_subplots(
-            rows=3, cols=1,
-            shared_xaxes=True,
-            vertical_spacing=0.03,
-            row_heights=[0.6,0.2,0.2]
-        )
+                    st.caption(f"更新：{last_day}")
 
-        # K線
-        fig.add_trace(go.Candlestick(
-            x=data.index,
-            open=data['Open'],
-            high=data['High'],
-            low=data['Low'],
-            close=data['Close'],
-            increasing_line_color='#FF4B4B',
-            decreasing_line_color='#00B050'
-        ), row=1,col=1)
+            except:
+                st.error("籌碼抓取失敗")
 
-        # MA + ATR
-        fig.add_trace(go.Scatter(x=data.index,y=data['MA5'],line=dict(color='white',width=1)),row=1,col=1)
-        fig.add_trace(go.Scatter(x=data.index,y=data['MA20'],line=dict(color='orange',width=1)),row=1,col=1)
-        fig.add_trace(go.Scatter(x=data.index,y=data['MA60'],line=dict(color='green',width=1)),row=1,col=1)
-        fig.add_trace(go.Scatter(x=data.index,y=data['ATR_Trailing'],line=dict(color='magenta',dash='dot')),row=1,col=1)
+            # =============================
+            # 📈 法人趨勢
+            # =============================
+            if not df_chip.empty:
+                df_chip['net'] = (df_chip['buy'] - df_chip['sell']) / 1000
+                df_trend = df_chip.pivot_table(index='date', columns='name', values='net', aggfunc='sum').fillna(0)
 
-        # Volume
-        fig.add_trace(go.Bar(x=data.index,y=data['Volume'],marker_color='rgba(100,149,237,0.4)'),row=2,col=1)
+                name_map = {'Foreign_Investor':'外資','Investment_Trust':'投信','Dealer_Self':'自營商(自有)','Dealer_Hedging':'自營商(避險)'}
+                df_trend = df_trend.rename(columns=lambda x: next((v for k,v in name_map.items() if k in x), x))
+                dealer_cols = [c for c in df_trend.columns if '自營商' in c]
+                if dealer_cols:
+                    df_trend['自營商'] = df_trend[dealer_cols].sum(axis=1)
+                    df_trend = df_trend.drop(columns=dealer_cols, errors='ignore')
 
-        # RSI + MACD 合併
-        fig.add_trace(go.Scatter(x=data.index,y=data['RSI'],name="RSI",line=dict(color='yellow')),row=3,col=1)
-        fig.add_trace(go.Scatter(x=data.index,y=data['MACD'],name="MACD",line=dict(color='#00CCFF')),row=3,col=1)
+                fig_chip = go.Figure()
 
-        fig.update_layout(
-            template="plotly_dark",
-            height=800,
-            hovermode="x unified",
-            margin=dict(l=10,r=10,t=10,b=10),
-            xaxis_rangeslider_visible=False
-        )
+                for label,color in {'外資':'#2962FF','投信':'#FF6D00','自營商':'#00C853'}.items():
+                    if label in df_trend.columns:
+                        fig_chip.add_trace(go.Scatter(x=df_trend.index,y=df_trend[label],name=label,line=dict(color=color)))
 
-        fig.update_yaxes(gridcolor="#2A2E39")
+                fig_chip.update_layout(template="plotly_dark",height=300,hovermode="x unified")
+                st.plotly_chart(fig_chip,use_container_width=True)
 
-        st.plotly_chart(fig,use_container_width=True)
+            # =============================
+            # 📊🔥 合併主圖（TV風格）
+            # =============================
+            st.markdown('<div class="section-title">📊 技術分析</div>', unsafe_allow_html=True)
 
-        # =============================
-        # 🤖 AI 專業評分系統（升級版）
-        # =============================
-        st.write("---")
-        st.markdown("## 🤖 投資診斷系統")
+            fig = make_subplots(
+                rows=3, cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.03,
+                row_heights=[0.6,0.2,0.2]
+            )
 
-        curr_rsi = data['RSI'].iloc[-1]
-        curr_macd = data['MACD'].iloc[-1]
-        curr_sig = data['Signal'].iloc[-1]
-        curr_hist = data['Hist'].iloc[-1]
-        prev_hist = data['Hist'].iloc[-2]
+            # K線 (【UI優化】將下降 K 線改為波斯綠色)
+            fig.add_trace(go.Candlestick(
+                x=data.index,
+                open=data['Open'],
+                high=data['High'],
+                low=data['Low'],
+                close=data['Close'],
+                increasing_line_color='#FF4B4B',
+                decreasing_line_color='#26A69A'
+            ), row=1,col=1)
 
-        is_above_ma20 = price > float(curr['MA20'])
-        macd_golden_cross = curr_macd > curr_sig
+            # MA + ATR
+            fig.add_trace(go.Scatter(x=data.index,y=data['MA5'],line=dict(color='white',width=1)),row=1,col=1)
+            fig.add_trace(go.Scatter(x=data.index,y=data['MA20'],line=dict(color='orange',width=1)),row=1,col=1)
+            fig.add_trace(go.Scatter(x=data.index,y=data['MA60'],line=dict(color='green',width=1)),row=1,col=1)
+            fig.add_trace(go.Scatter(x=data.index,y=data['ATR_Trailing'],line=dict(color='magenta',dash='dot')),row=1,col=1)
 
-        # =============================
-        # 🎯 1. 三大核心因子評分
-        # =============================
+            # Volume
+            fig.add_trace(go.Bar(x=data.index,y=data['Volume'],marker_color='rgba(100,149,237,0.4)'),row=2,col=1)
 
-        trend_score = 0
-        psy_score = 0
-        momo_score = 0
+            # RSI + MACD 合併
+            fig.add_trace(go.Scatter(x=data.index,y=data['RSI'],name="RSI",line=dict(color='yellow')),row=3,col=1)
+            fig.add_trace(go.Scatter(x=data.index,y=data['MACD'],name="MACD",line=dict(color='#00CCFF')),row=3,col=1)
 
-        # 趨勢
-        if is_above_ma20 and macd_golden_cross:
-            trend_label = "多頭趨勢"
-            trend_score = 2
-        elif is_above_ma20:
-            trend_label = "高檔整理"
-            trend_score = 1
-        elif macd_golden_cross:
-            trend_label = "反彈初期"
-            trend_score = 0
-        else:
-            trend_label = "空頭趨勢"
-            trend_score = -2
+            fig.update_layout(
+                template="plotly_dark",
+                height=800,
+                hovermode="x unified",
+                margin=dict(l=10,r=10,t=10,b=10),
+                xaxis_rangeslider_visible=False
+            )
 
-        # 心理
-        if curr_rsi >= 75:
-            psy_label = "過熱"
-            psy_score = -1
-        elif curr_rsi <= 25:
-            psy_label = "超跌"
-            psy_score = 1
-        else:
-            psy_label = "中性"
-            psy_score = 0
+            fig.update_yaxes(gridcolor="#2A2E39")
 
-        # 動能
-        if curr_macd > curr_sig and curr_hist > prev_hist:
-            momo_label = "動能增強"
-            momo_score = 1
-        elif curr_macd < curr_sig and curr_hist < prev_hist:
-            momo_label = "動能轉弱"
-            momo_score = -1
-        else:
-            momo_label = "動能整理"
-            momo_score = 0
+            st.plotly_chart(fig,use_container_width=True)
 
-        # =============================
-        # 🎯 2. 籌碼 + ATR
-        # =============================
+            # =============================
+            # 🤖 AI 專業評分系統（升級版）
+            # =============================
+            st.write("---")
+            st.markdown("## 🤖 投資診斷系統")
 
-        score = trend_score + psy_score + momo_score
+            curr_rsi = data['RSI'].iloc[-1]
+            curr_macd = data['MACD'].iloc[-1]
+            curr_sig = data['Signal'].iloc[-1]
+            curr_hist = data['Hist'].iloc[-1]
+            prev_hist = data['Hist'].iloc[-2]
 
-        total_net = f_net + d_net
+            is_above_ma20 = price > float(curr['MA20'])
+            macd_golden_cross = curr_macd > curr_sig
 
-        if f_net > 0 and d_net > 0:
-            chip_label = "法人同步買入"
-            score += 2
-        elif total_net > 0:
-            chip_label = "法人偏多"
-            score += 1
-        elif total_net < 0:
-            chip_label = "法人賣出"
-            score -= 1
-        else:
-            chip_label = "中性"
+            # =============================
+            # 🎯 1. 三大核心因子評分
+            # =============================
+            trend_score, psy_score, momo_score = 0, 0, 0
 
-        atr_stop = data['ATR_Trailing'].iloc[-1]
+            # 趨勢
+            if is_above_ma20 and macd_golden_cross:
+                trend_label = "多頭趨勢"
+                trend_score = 2
+            elif is_above_ma20:
+                trend_label = "高檔整理"
+                trend_score = 1
+            elif macd_golden_cross:
+                trend_label = "反彈初期"
+                trend_score = 0
+            else:
+                trend_label = "空頭趨勢"
+                trend_score = -2
 
-        if price < atr_stop:
-            atr_label = "跌破支撐"
-            score -= 1
-        else:
-            atr_label = "支撐有效"
+            # 心理
+            if curr_rsi >= 75:
+                psy_label = "過熱"
+                psy_score = -1
+            elif curr_rsi <= 25:
+                psy_label = "超跌"
+                psy_score = 1
+            else:
+                psy_label = "中性"
+                psy_score = 0
 
-        # =============================
-        # 🎯 3. 最終評級
-        # =============================
+            # 動能
+            if curr_macd > curr_sig and curr_hist > prev_hist:
+                momo_label = "動能增強"
+                momo_score = 1
+            elif curr_macd < curr_sig and curr_hist < prev_hist:
+                momo_label = "動能轉弱"
+                momo_score = -1
+            else:
+                momo_label = "動能整理"
+                momo_score = 0
 
-        if score >= 4:
-            rec = "強勢多頭"
-            color = "#26A69A"
-        elif score >= 2:
-            rec = "偏多"
-            color = "#00C853"
-        elif score >= 0:
-            rec = "盤整"
-            color = "#FFD600"
-        else:
-            rec = "偏空"
-            color = "#EF5350"
+            # =============================
+            # 🎯 2. 籌碼 + ATR
+            # =============================
+            score = trend_score + psy_score + momo_score
+            
+            try:
+                total_net = f_net + d_net
+            except:
+                total_net, f_net, d_net = 0, 0, 0
 
-        # =============================
-        # 🎨 UI（TradingView卡片）
-        # =============================
+            if f_net > 0 and d_net > 0:
+                chip_label = "法人同步買入"
+                score += 2
+            elif total_net > 0:
+                chip_label = "法人偏多"
+                score += 1
+            elif total_net < 0:
+                chip_label = "法人賣出"
+                score -= 1
+            else:
+                chip_label = "中性"
 
-        st.markdown(f"""
-        <div style="
-        background:#131722;
-        border:1px solid #2A2E39;
-        border-radius:12px;
-        padding:20px;
-        ">
+            atr_stop = data['ATR_Trailing'].iloc[-1]
 
-        <h2 style="color:{color}; text-align:center; margin:0;">
-        {rec}
-        </h2>
+            if price < atr_stop:
+                atr_label = "跌破支撐"
+                score -= 1
+            else:
+                atr_label = "支撐有效"
 
-        <p style="text-align:center; color:#9BA3AF;">
-        綜合評分：{score}
-        </p>
+            # =============================
+            # 🎯 3. 最終評級
+            # =============================
+            if score >= 4:
+                rec = "強勢多頭"
+                color = "#26A69A"
+            elif score >= 2:
+                rec = "偏多"
+                color = "#00C853"
+            elif score >= 0:
+                rec = "盤整"
+                color = "#FFD600"
+            else:
+                rec = "偏空"
+                color = "#EF5350"
 
-        <hr style="border:0.5px solid #2A2E39;">
+            # =============================
+            # 🎨 UI（TradingView卡片）
+            # =============================
+            st.markdown(f"""
+            <div style="
+            background:#131722;
+            border:1px solid #2A2E39;
+            border-radius:12px;
+            padding:20px;
+            ">
 
-        <div style="display:flex; justify-content:space-between;">
+            <h2 style="color:{color}; text-align:center; margin:0;">
+            {rec}
+            </h2>
 
-        <div>
-        <p style="color:#9BA3AF;">趨勢</p>
-        <p style="color:white;">{trend_label}</p>
-        </div>
+            <p style="text-align:center; color:#9BA3AF;">
+            綜合評分：{score}
+            </p>
 
-        <div>
-        <p style="color:#9BA3AF;">動能</p>
-        <p style="color:white;">{momo_label}</p>
-        </div>
+            <hr style="border:0.5px solid #2A2E39;">
 
-        <div>
-        <p style="color:#9BA3AF;">心理</p>
-        <p style="color:white;">{psy_label}</p>
-        </div>
+            <div style="display:flex; justify-content:space-between;">
 
-        <div>
-        <p style="color:#9BA3AF;">籌碼</p>
-        <p style="color:white;">{chip_label}</p>
-        </div>
+            <div>
+            <p style="color:#9BA3AF;">趨勢</p>
+            <p style="color:white;">{trend_label}</p>
+            </div>
 
-        <div>
-        <p style="color:#9BA3AF;">ATR</p>
-        <p style="color:white;">{atr_label}</p>
-        </div>
+            <div>
+            <p style="color:#9BA3AF;">動能</p>
+            <p style="color:white;">{momo_label}</p>
+            </div>
 
-        </div>
-        </div>
-        """, unsafe_allow_html=True)
+            <div>
+            <p style="color:#9BA3AF;">心理</p>
+            <p style="color:white;">{psy_label}</p>
+            </div>
 
-        # =============================
-        # 📌 補充說明（專業版）
-        # =============================
+            <div>
+            <p style="color:#9BA3AF;">籌碼</p>
+            <p style="color:white;">{chip_label}</p>
+            </div>
 
-        st.caption(f"""
-        📌 判讀摘要：
-        - 趨勢：{trend_label}
-        - 動能：{momo_label}
-        - 心理：RSI {curr_rsi:.1f}
-        - 籌碼：{chip_label}
-        - 風控：{atr_label}
-        """)
+            <div>
+            <p style="color:#9BA3AF;">ATR</p>
+            <p style="color:white;">{atr_label}</p>
+            </div>
 
-# 8. 產經新聞區 (自動去重)
-if show_news and ticker_input:
-    st.write("---"); st.subheader("📰 台灣產經新聞")
-    try:
-        df_news = dl.taiwan_stock_news(stock_id=ticker_input.split('.')[0], start_date=(datetime.now() - timedelta(days=5)).strftime('%Y-%m-%d'))
-        if not df_news.empty:
-            df_news = df_news.drop_duplicates(subset=['title'], keep='first')
-            if 'date' in df_news.columns: df_news = df_news.sort_values(by='date', ascending=False)
-            for _, row in df_news.head(8).iterrows():
-                with st.expander(f"[{row['date'].split(' ')[0]}] {row['title']}"):
-                    st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
-        else: st.info("⚠️ 近期暫無相關新聞。")
-    except: pass
+            </div>
+            </div>
+            """, unsafe_allow_html=True)
 
+            st.caption(f"""
+            📌 判讀摘要：
+            - 趨勢：{trend_label}
+            - 動能：{momo_label}
+            - 心理：RSI {curr_rsi:.1f}
+            - 籌碼：{chip_label}
+            - 風控：{atr_label}
+            """)
+
+# ==============================================================================
+# Tab 3: 策略選股雷達 (移入 Tab)
+# ==============================================================================
+with tab_screener:
+    show_screener()
+
+# ==============================================================================
+# Tab 4: 產經動態 (移入 Tab)
+# ==============================================================================
+with tab_news:
+    if show_news and ticker_input:
+        st.subheader("📰 台灣產經新聞")
+        try:
+            # 【效能優化】改用快取的新聞抓取函數
+            df_news = fetch_news_data_cached(ticker_input)
+            if not df_news.empty:
+                df_news = df_news.drop_duplicates(subset=['title'], keep='first')
+                if 'date' in df_news.columns: df_news = df_news.sort_values(by='date', ascending=False)
+                for _, row in df_news.head(8).iterrows():
+                    with st.expander(f"[{row['date'].split(' ')[0]}] {row['title']}"):
+                        st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
+            else: st.info("⚠️ 近期暫無相關新聞。")
+        except: pass
