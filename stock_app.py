@@ -1133,4 +1133,4 @@ with tab_news:
                 st.info("⚠️ 目前沒有相關新聞資料")
 
         except Exception as e:
-            st.error(f"新聞抓取失敗：{e}"
+            st.error(f"新聞抓取失敗：{e}")
