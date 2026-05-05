@@ -500,7 +500,7 @@ if active_costs:
 # 計算損益
 profit = total_value - total_cost
 roi = (profit / total_cost * 100) if total_cost > 0 else 0
-p_color = "#FF4B4B" if profit > 0 else ("#00B050" if profit < 0 else "#FFFFFF")
+p_color = "#FF4B4B" if profit > 0 else ("" if profit < 0 else "#FFFFFF")
 
 st.write("### 🏢 小鐵的雲端投資組合")
 col_summary, col_chart = st.columns([3.0, 7.0])
@@ -848,8 +848,8 @@ if ticker_input:
             high=data['High'],
             low=data['Low'],
             close=data['Close'],
-            increasing_line_color='#00B050',
-            decreasing_line_color='#EF5350'
+            increasing_line_color='#FF4B4B',
+            decreasing_line_color='#00B050'
         ), row=1,col=1)
 
         # MA + ATR
@@ -948,11 +948,11 @@ if ticker_input:
         elif total_net > 0: 
             score += 1; chip_status = "✅ 法人偏多"; chip_color = "#FF4B4B"
         elif total_net < 0: 
-            score -= 1; chip_status = "❌ 法人撤出"; chip_color = "#00B050"
+            score -= 1; chip_status = "❌ 法人撤出"; chip_color = ""
 
         atr_stop = data['ATR_Trailing'].iloc[-1]
         if price < atr_stop: 
-            score -= 1; atr_status = "⚠️ 跌破防線"; atr_color = "#00B050"
+            score -= 1; atr_status = "⚠️ 跌破防線"; atr_color = ""
         else: 
             atr_status = "✅ 守住支撐"; atr_color = "#FF4B4B"
 
@@ -967,7 +967,7 @@ if ticker_input:
             rec_text, rec_color = "💤 觀望為宜", "#FFFFFF"
             summary_advice = "目前盤勢不明顯，像是陷入泥沼的肉搏戰。多空因素互見，不建議在這裡做大動作，保持現金水位，等待下一個明顯的金叉訊號。"
         else: 
-            rec_text, rec_color = "🚨 嚴防急跌", "#00B050"
+            rec_text, rec_color = "🚨 嚴防急跌", ""
             summary_advice = "警報響起！技術面已全面走弱，且法人似乎正在悄悄離場。這時候保持空手或是嚴格執行停損是明智之舉，留得青山在，不怕沒材燒。"
 
         # 顯示大圖卡
