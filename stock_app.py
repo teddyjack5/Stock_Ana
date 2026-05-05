@@ -670,8 +670,8 @@ st.markdown("""
 }
 .metric-title { color: #9BA3AF; font-size: 12px; }
 .metric-value { font-size: 22px; font-weight: 600; }
-.up { color: #26A69A; }
-.down { color: #EF5350; }
+.up { color: #FF4B4B; }
+.down { color: #00B050; }
 .section-title {
     font-size: 18px;
     font-weight: 600;
