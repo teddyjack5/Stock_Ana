@@ -1038,14 +1038,99 @@ with tab_analysis:
 with tab_news:
     if show_news and ticker_input:
         st.subheader("📰 台灣產經新聞")
+
         try:
-            # 【效能優化】改用快取的新聞抓取函數
-            df_news = fetch_news_data_cached(ticker_input)
+            # =============================
+            # 🔍 1. 關鍵字強化（核心升級）
+            # =============================
+            stock_code = ticker_input.split('.')[0]
+
+            # 👉 你可以自己維護這個 mapping（非常重要）
+            stock_map = {
+                "2330": ["台積電", "TSMC", "半導體"],
+                "2356": ["英業達", "Inventec", "電子代工"],
+                "2618": ["長榮航", "EVA", "交通空運"]
+            }
+
+            keywords = [stock_code]
+
+            if stock_code in stock_map:
+                keywords += stock_map[stock_code]
+
+            # =============================
+            # 🧠 2. 多關鍵字搜尋（提高命中率）
+            # =============================
+            all_news = []
+
+            for kw in keywords:
+                df_tmp = fetch_news_data_cached(kw)
+                if df_tmp is not None and not df_tmp.empty:
+                    all_news.append(df_tmp)
+
+            # 合併
+            if all_news:
+                df_news = pd.concat(all_news, ignore_index=True)
+            else:
+                df_news = pd.DataFrame()
+
+            # =============================
+            # 🔄 3. fallback（抓產業新聞）
+            # =============================
+            if df_news.empty:
+                st.warning("⚠️ 個股新聞較少，改為顯示產業新聞")
+
+                fallback_keywords = ["台股", "半導體", "電子產業"]
+
+                for kw in fallback_keywords:
+                    df_tmp = fetch_news_data_cached(kw)
+                    if df_tmp is not None and not df_tmp.empty:
+                        df_news = df_tmp
+                        break
+
+            # =============================
+            # 📊 4. 整理資料
+            # =============================
             if not df_news.empty:
                 df_news = df_news.drop_duplicates(subset=['title'], keep='first')
-                if 'date' in df_news.columns: df_news = df_news.sort_values(by='date', ascending=False)
+
+                if 'date' in df_news.columns:
+                    df_news = df_news.sort_values(by='date', ascending=False)
+
+                # =============================
+                # 🎨 5. UI 優化（專業版）
+                # =============================
                 for _, row in df_news.head(8).iterrows():
-                    with st.expander(f"[{row['date'].split(' ')[0]}] {row['title']}"):
-                        st.write(row.get('summary', '無摘要')); st.markdown(f"🔗 [點擊查看原文]({row['link']})")
-            else: st.info("⚠️ 近期暫無相關新聞。")
-        except: pass
+
+                    date_str = row.get('date', '')[:10]
+                    title = row.get('title', '無標題')
+                    summary = row.get('summary', '無摘要')
+                    link = row.get('link', '#')
+
+                    st.markdown(f"""
+                    <div style="
+                        background:#131722;
+                        border:1px solid #2A2E39;
+                        border-radius:10px;
+                        padding:12px;
+                        margin-bottom:8px;
+                    ">
+                        <p style="color:#9BA3AF; font-size:12px; margin:0;">
+                            {date_str}
+                        </p>
+                        <p style="color:white; font-size:14px; margin:5px 0;">
+                            {title}
+                        </p>
+                        <p style="color:#9BA3AF; font-size:13px;">
+                            {summary}
+                        </p>
+                        <a href="{link}" target="_blank" style="color:#4FC3F7;">
+                            查看全文 →
+                        </a>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            else:
+                st.info("⚠️ 目前沒有相關新聞資料")
+
+        except Exception as e:
+            st.error(f"新聞抓取失敗：{e}"
