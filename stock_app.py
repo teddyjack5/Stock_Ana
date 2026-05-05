@@ -815,9 +815,10 @@ if ticker_input:
 
             name_map = {'Foreign_Investor':'外資','Investment_Trust':'投信','Dealer_Self':'自營商(自有)','Dealer_Hedging':'自營商(避險)'}
             df_trend = df_trend.rename(columns=lambda x: next((v for k,v in name_map.items() if k in x), x))
+            dealer_cols = [c for c in df_trend.columns if '自營商' in c]
             if dealer_cols:
                 df_trend['自營商'] = df_trend[dealer_cols].sum(axis=1)
-            df_trend = df_trend.drop(columns=dealer_cols, errors='ignore')
+                df_trend = df_trend.drop(columns=dealer_cols, errors='ignore')
 
             fig_chip = go.Figure()
 
