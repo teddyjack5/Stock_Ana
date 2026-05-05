@@ -502,62 +502,133 @@ profit = total_value - total_cost
 roi = (profit / total_cost * 100) if total_cost > 0 else 0
 p_color = "#FF4B4B" if profit > 0 else ("" if profit < 0 else "#FFFFFF")
 
-st.write("### 🏢 小鐵的雲端投資組合")
-col_summary, col_chart = st.columns([3.0, 7.0])
+# =============================
+# 🏢 投資組合（升級版 UI）
+# =============================
+st.markdown("## 🏢 小鐵的雲端投資組合")
 
+col_summary, col_chart = st.columns([3, 7])
+
+# =============================
+# 📊 左側：資產儀表卡
+# =============================
 with col_summary:
     st.markdown(f"""
-        <div style="
-            background-color: #1e1e1e; padding: 20px; border-radius: 15px; 
-            border-left: 10px solid {p_color}; height: 350px; 
-            display: flex; flex-direction: column; justify-content: space-around;
-        ">
-            <div>
-                <p style="color: gray; margin: 0; font-size: 14px;">資產總市值</p>
-                <h2 style="color: white; margin: 0; font-size: 24px;">NT$ {int(total_value):,}</h2>
-            </div>
-            <div style="border-top: 1px solid #444; border-bottom: 1px solid #444; padding: 15px 0;">
-                <p style="color: gray; margin: 0; font-size: 14px;">預估總損益</p>
-                <h1 style="color: {p_color}; margin: 0; font-size: 32px;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
-            </div>
-            <div>
-                <p style="color: gray; margin: 0; font-size: 14px;">總報酬率</p>
-                <h2 style="color: {p_color}; margin: 0; font-size: 24px;">{roi:.2f}%</h2>
-            </div>
+    <div style="
+        background: #131722;
+        border: 1px solid #2A2E39;
+        border-radius: 12px;
+        padding: 20px;
+        height: 380px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    ">
+        <div>
+            <p style="color:#9BA3AF; font-size:13px; margin:0;">總資產</p>
+            <h2 style="color:white; margin:5px 0;">NT$ {int(total_value):,}</h2>
         </div>
+
+        <div style="padding:15px 0; border-top:1px solid #2A2E39; border-bottom:1px solid #2A2E39;">
+            <p style="color:#9BA3AF; font-size:13px; margin:0;">未實現損益</p>
+            <h1 style="color:{p_color}; margin:5px 0;">
+                {"+" if profit > 0 else ""}{int(profit):,}
+            </h1>
+        </div>
+
+        <div>
+            <p style="color:#9BA3AF; font-size:13px; margin:0;">報酬率</p>
+            <h2 style="color:{p_color}; margin:5px 0;">{roi:.2f}%</h2>
+        </div>
+    </div>
     """, unsafe_allow_html=True)
 
+# =============================
+# 🥧 右側：資產配置（強化版）
+# =============================
 with col_chart:
     if processed_data:
+
         labels = [d['label'] for d in processed_data]
         values = [d['value'] for d in processed_data]
-        
-        fig_pie = go.Figure(data=[go.Pie(
-            labels=labels, 
-            values=values, 
-            hole=.4,
-            textinfo='label+percent', 
-            textposition='inside',
-            marker=dict(line=dict(color='#1e1e1e', width=2))
-        )])
-        
+
+        fig_pie = go.Figure()
+
+        fig_pie.add_trace(go.Pie(
+            labels=labels,
+            values=values,
+            hole=0.6,  # 🔥 更像TradingView
+            textinfo='percent',
+            textfont=dict(size=13),
+            marker=dict(
+                line=dict(color='#131722', width=2)
+            ),
+            hovertemplate="<b>%{label}</b><br>金額: %{value:,}<br>占比: %{percent}<extra></extra>"
+        ))
+
         fig_pie.update_layout(
-            showlegend=False, 
             template="plotly_dark",
-            margin=dict(t=10, b=10, l=10, r=10),
             height=380,
+            margin=dict(t=10, b=10, l=10, r=10),
+
+            # 🔥 中心文字
+            annotations=[dict(
+                text=f"NT$ {int(total_value):,}",
+                x=0.5, y=0.5,
+                font_size=16,
+                showarrow=False,
+                font_color="white"
+            )],
+
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.2,
+                xanchor="center",
+                x=0.5,
+                font=dict(size=11)
+            )
         )
+
         st.plotly_chart(fig_pie, use_container_width=True)
-# 顯示下方的智慧點評 (跨欄顯示)
+
+# =============================
+# 💡 下方：智慧分析（升級卡片）
+# =============================
 if 'values' in locals() and values:
+
     max_idx = values.index(max(values))
     max_stock = labels[max_idx]
     max_pct = (values[max_idx] / sum(values)) * 100
-    
+
     if max_pct > 50:
-        st.warning(f"⚠️ **小鐵提醒**：您的資金高度集中在 **{max_stock}** ({max_pct:.1f}%)。若該股波動較大，將顯著影響總資產水位。")
+        insight_color = "#EF5350"
+        insight_text = f"""
+        ⚠️ 資產過度集中於 <b>{max_stock}</b>（{max_pct:.1f}%）<br>
+        建議適度分散，降低單一標的波動風險
+        """
     else:
-        st.info(f"✅ **小鐵點評**：資產配置比例健康。目前以 **{max_stock}** 為核心持股。")
+        insight_color = "#26A69A"
+        insight_text = f"""
+        ✅ 資產配置健康<br>
+        目前以 <b>{max_stock}</b> 為核心持股
+        """
+
+    st.markdown(f"""
+    <div style="
+        background:#131722;
+        border:1px solid #2A2E39;
+        border-left:6px solid {insight_color};
+        border-radius:10px;
+        padding:16px;
+        margin-top:10px;
+    ">
+        <p style="color:#9BA3AF; font-size:13px; margin:0;">AI 投資洞察</p>
+        <p style="color:white; font-size:14px; margin-top:6px;">
+            {insight_text}
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
         
 # 側邊欄：功能按鈕區
 st.sidebar.subheader("⚙️ 庫存管理")
@@ -881,7 +952,7 @@ if ticker_input:
         # 🤖 AI 專業評分系統（升級版）
         # =============================
         st.write("---")
-        st.markdown("## 🤖 AI 投資診斷系統")
+        st.markdown("## 🤖 投資診斷系統")
 
         curr_rsi = data['RSI'].iloc[-1]
         curr_macd = data['MACD'].iloc[-1]
