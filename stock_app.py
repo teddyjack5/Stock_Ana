@@ -848,7 +848,7 @@ if ticker_input:
             high=data['High'],
             low=data['Low'],
             close=data['Close'],
-            increasing_line_color='#26A69A',
+            increasing_line_color='#00B050',
             decreasing_line_color='#EF5350'
         ), row=1,col=1)
 
