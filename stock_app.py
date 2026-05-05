@@ -657,7 +657,7 @@ def get_monthly_revenue(stock_id):
         return df.sort_values('date')
     except: return pd.DataFrame()
 
- =============================
+ ##=============================
 # 🎨 TradingView UI 強化
 # =============================
 st.markdown("""
