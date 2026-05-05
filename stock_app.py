@@ -14,6 +14,54 @@ from streamlit_gsheets import GSheetsConnection
 from bs4 import BeautifulSoup
 
 # ==============================================================================
+# 【CSS 優化】 - 針對 st.tabs 進行 TradingView 風格美化
+# ==============================================================================
+st.markdown("""
+    <style>
+    /* 1. 調整整個 Tab 欄的高度與背景 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+        background-color: #161a25; /* 深色背景 */
+        padding: 10px 10px 0px 10px;
+        border-radius: 10px 10px 0 0;
+    }
+
+    /* 2. 調整單個 Tab 的樣式 */
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #1e222d; /* 預設深灰 */
+        border-radius: 8px 8px 0px 0px;
+        color: #d1d4dc; /* 淺灰字 */
+        font-size: 18px;
+        font-weight: 600;
+        padding: 0px 25px;
+        border: 1px solid #363a45;
+        border-bottom: none;
+        transition: all 0.2s ease;
+    }
+
+    /* 3. 懸停時的效果 (Hover) */
+    .stTabs [data-baseweb="tab"]:hover {
+        color: #2962ff !important;
+        background-color: #2a2e39;
+    }
+
+    /* 4. 選中狀態的樣式 (Active) */
+    .stTabs [aria-selected="true"] {
+        background-color: #2a2e39 !important;
+        color: #2962ff !important; /* TradingView 經典藍 */
+        border-bottom: 3px solid #2962ff !important; /* 底部藍色粗條 */
+    }
+    
+    /* 隱藏預設的細線 */
+    .stTabs [data-baseweb="tab-highlight"] {
+        background-color: transparent !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# ==============================================================================
 # 【新增效能優化】 - 集中式快取管理 (解決介面卡頓)
 # ==============================================================================
 @st.cache_data(ttl=300) # 快取 5 分鐘，避免頻繁呼叫 yfinance
