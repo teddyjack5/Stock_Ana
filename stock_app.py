@@ -99,6 +99,48 @@ def fetch_news_data_cached(stock_id):
 # 初始化 DataLoader (用於其他未快取的輕量操作)
 dl = DataLoader()
 
+# =============================
+# 🔥 籌碼分析強化模組（NEW - 不影響原邏輯）
+# =============================
+def analyze_chip_trend(df_chip):
+    if df_chip is None or df_chip.empty:
+        return {}
+
+    df = df_chip.copy()
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+
+    # 計算淨買賣
+    df['net'] = (df['buy'] - df['sell']) / 1000
+
+    # 分三大法人
+    foreign = df[df['name'].str.contains('Foreign', case=False, na=False)]
+    trust = df[df['name'].str.contains('Investment_Trust', case=False, na=False)]
+    dealer = df[df['name'].str.contains('Dealer', case=False, na=False)]
+
+    # 每日加總
+    f_daily = foreign.groupby('date')['net'].sum()
+    t_daily = trust.groupby('date')['net'].sum()
+    d_daily = dealer.groupby('date')['net'].sum()
+
+    def count_streak(series):
+        streak = 0
+        for val in reversed(series.tail(10)):
+            if val > 0:
+                streak += 1
+            else:
+                break
+        return streak
+
+    result = {
+        "外資連續買": count_streak(f_daily),
+        "投信連續買": count_streak(t_daily),
+        "自營商連續買": count_streak(d_daily),
+        "外資趨勢": f_daily.tail(5).sum(),
+        "投信趨勢": t_daily.tail(5).sum(),
+        "自營商趨勢": d_daily.tail(5).sum()
+    }
+
+    return result
 # ==============================================================================
 # 第一部分：【雲端基礎設施】 - 處理 Google Sheets 連線與資料存取
 # ==============================================================================
@@ -804,6 +846,45 @@ with tab_analysis:
                         """, unsafe_allow_html=True)
 
                     st.caption(f"更新：{last_day.date()}")
+                    # =============================
+                    # 🔥 主力行為分析（NEW）
+                    # =============================
+                    chip_analysis = analyze_chip_trend(df_chip)
+
+                    if chip_analysis:
+                        st.markdown("### 🧠 主力行為解析")
+
+                        c1, c2, c3 = st.columns(3)
+
+                        def render_chip_card(col, title, streak, trend):
+                            if streak >= 3:
+                                status = "🔥 連續買超"
+                                color = "#FF4B4B"
+                            elif trend > 0:
+                                status = "✅ 偏多"
+                                color = "#FF9900"
+                            elif trend < 0:
+                                status = "❌ 偏空"
+                                color = "#00B050"
+                            else:
+                                status = "中性"
+                                color = "#AAAAAA"
+
+                            col.markdown(f"""
+                            <div class="card">
+                                <div class="metric-title">{title}</div>
+                                    <div style="color:{color}; font-size:20px; font-weight:bold;">
+                                    {status}
+                                </div>
+                                <div style="font-size:12px; color:gray;">
+                                    連續買超：{streak} 天
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        render_chip_card(c1, "外資", chip_analysis["外資連續買"], chip_analysis["外資趨勢"])
+                        render_chip_card(c2, "投信", chip_analysis["投信連續買"], chip_analysis["投信趨勢"])
+                        render_chip_card(c3, "自營商", chip_analysis["自營商連續買"], chip_analysis["自營商趨勢"])
 
                 else:
                     st.warning("⚠️ 無法人資料（可能尚未更新）")
