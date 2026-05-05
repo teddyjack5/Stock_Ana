@@ -767,36 +767,49 @@ with tab_analysis:
             # 👥 法人籌碼
             # =============================
             try:
-                # 【效能優化】改用快取的 fetch_chip_data_cached
                 df_chip = fetch_chip_data_cached(ticker_input)
 
-                if not df_chip.empty:
-                    last_day = df_chip['date'].iloc[-1]
+                # ✅ 防呆：確保有資料
+                if df_chip is not None and not df_chip.empty:
+
+                    # ✅ 修正1：確保 date 是 datetime
+                    df_chip['date'] = pd.to_datetime(df_chip['date'], errors='coerce')
+
+                    # ✅ 修正2：抓「最新有效交易日」（不是最後一列）
+                    last_day = df_chip['date'].dropna().max()
+
                     day_data = df_chip[df_chip['date'] == last_day]
 
-                    f_net = (day_data[day_data['name'].str.contains('Foreign')]['buy'].sum()
-                             - day_data[day_data['name'].str.contains('Foreign')]['sell'].sum()) / 1000
-                    d_net = (day_data[day_data['name'] == 'Investment_Trust']['buy'].sum()
-                             - day_data[day_data['name'] == 'Investment_Trust']['sell'].sum()) / 1000
-                    s_net = (day_data[day_data['name'].str.contains('Dealer')]['buy'].sum()
-                             - day_data[day_data['name'].str.contains('Dealer')]['sell'].sum()) / 1000
+                    # ✅ 修正3：名稱統一（避免抓不到）
+                    f_net = (day_data[day_data['name'].str.contains('Foreign', case=False, na=False)]['buy'].sum()
+                             - day_data[day_data['name'].str.contains('Foreign', case=False, na=False)]['sell'].sum()) / 1000
+
+                    d_net = (day_data[day_data['name'].str.contains('Investment_Trust', case=False, na=False)]['buy'].sum()
+                             - day_data[day_data['name'].str.contains('Investment_Trust', case=False, na=False)]['sell'].sum()) / 1000
+
+                    s_net = (day_data[day_data['name'].str.contains('Dealer', case=False, na=False)]['buy'].sum()
+                             - day_data[day_data['name'].str.contains('Dealer', case=False, na=False)]['sell'].sum()) / 1000
 
                     st.markdown('<div class="section-title">👥 法人動向</div>', unsafe_allow_html=True)
                     c1,c2,c3 = st.columns(3)
 
+                    # ✅ 修正4：數值顯示 + 顏色
                     for c,l,v in zip([c1,c2,c3],["外資","投信","自營商"],[f_net,d_net,s_net]):
                         cls = "up" if v>0 else "down"
                         c.markdown(f"""
                         <div class="card">
                             <div class="metric-title">{l}</div>
-                            <div class="metric-value {cls}">{int(v):,}</div>
+                            <div class="metric-value {cls}">{int(v):,} 張</div>
                         </div>
                         """, unsafe_allow_html=True)
 
-                    st.caption(f"更新：{last_day}")
+                    st.caption(f"更新：{last_day.date()}")
 
-            except:
-                st.error("籌碼抓取失敗")
+                else:
+                    st.warning("⚠️ 無法人資料（可能尚未更新）")
+
+            except Exception as e:
+                st.error(f"籌碼抓取失敗: {e}")
 
             # =============================
             # 📈 法人趨勢
@@ -845,17 +858,15 @@ with tab_analysis:
             ), row=1,col=1)
 
             # MA + ATR
-            fig.add_trace(go.Scatter(x=data.index,y=data['MA5'],line=dict(color='white',width=1)),row=1,col=1)
-            fig.add_trace(go.Scatter(x=data.index,y=data['MA20'],line=dict(color='orange',width=1)),row=1,col=1)
-            fig.add_trace(go.Scatter(x=data.index,y=data['MA60'],line=dict(color='green',width=1)),row=1,col=1)
-            fig.add_trace(go.Scatter(x=data.index,y=data['ATR_Trailing'],line=dict(color='magenta',dash='dot')),row=1,col=1)
+            fig.add_trace(go.Scatter(x=data.index,y=data['MA5'],name="5日均線",line=dict(color='white',width=1)),row=1,col=1)
+            fig.add_trace(go.Scatter(x=data.index,y=data['MA20'],name="20日均線",line=dict(color='orange',width=1)),row=1,col=1)
+            fig.add_trace(go.Scatter(x=data.index,y=data['MA60'],name="60日均線",line=dict(color='green',width=1)),row=1,col=1)
+            fig.add_trace(go.Scatter(x=data.index,y=data['ATR_Trailing'],name="ATR 停損線",line=dict(color='magenta',dash='dot')),row=1,col=1)
 
-            # Volume
-            fig.add_trace(go.Bar(x=data.index,y=data['Volume'],marker_color='rgba(100,149,237,0.4)'),row=2,col=1)
+            fig.add_trace(go.Bar(x=data.index,y=data['Volume'],name="成交量",marker_color='rgba(100,149,237,0.4)'),row=2,col=1)
 
-            # RSI + MACD 合併
-            fig.add_trace(go.Scatter(x=data.index,y=data['RSI'],name="RSI",line=dict(color='yellow')),row=3,col=1)
-            fig.add_trace(go.Scatter(x=data.index,y=data['MACD'],name="MACD",line=dict(color='#00CCFF')),row=3,col=1)
+            fig.add_trace(go.Scatter(x=data.index,y=data['RSI'],name="RSI 指標",line=dict(color='yellow')),row=3,col=1)
+            fig.add_trace(go.Scatter(x=data.index,y=data['MACD'],name="MACD 動能",line=dict(color='#00CCFF')),row=3,col=1)
 
             fig.update_layout(
                 template="plotly_dark",
