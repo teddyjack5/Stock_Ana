@@ -657,31 +657,52 @@ def get_monthly_revenue(stock_id):
         return df.sort_values('date')
     except: return pd.DataFrame()
 
-# ==============================================================================
-# 第五部分：【視覺化報表與 AI 評等】 - 主畫面圖表渲染
-# ==============================================================================
+ =============================
+# 🎨 TradingView UI 強化
+# =============================
+st.markdown("""
+<style>
+.card {
+    background-color: #131722;
+    padding: 14px;
+    border-radius: 10px;
+    border: 1px solid #2A2E39;
+}
+.metric-title { color: #9BA3AF; font-size: 12px; }
+.metric-value { font-size: 22px; font-weight: 600; }
+.up { color: #26A69A; }
+.down { color: #EF5350; }
+.section-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-top: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# 防呆
+df_chip = pd.DataFrame()
+
 if ticker_input:
-    # 1. 穿透強化：針對短時間範圍，多抓一天 (2d) 確保今天一定在裡面
+
     f_period = "2d" if period == "1d" else period
     f_interval = "1m" if period in ["1d", "5d"] else "1d"
-    
+
     data = yf.download(ticker_input, period=f_period, interval=f_interval, progress=False)
-    
+
     if not data.empty:
-        # 處理多重索引
-        if isinstance(data.columns, pd.MultiIndex): 
+
+        if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
-            
-        # 強制轉換型態
+
         for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
             if col in data.columns:
                 data[col] = pd.to_numeric(data[col], errors='coerce')
-        
-        # 2. 關鍵修正：使用 ffill() 填充盤中 NaN
-        data = data.ffill() 
+
+        data = data.ffill()
         data = data.dropna(subset=['Close'])
 
-        # --- 開始指標計算 (保持不變) ---
+        # ===== 指標 =====
         data['MACD'], data['Signal'], data['Hist'] = calculate_macd(data)
         data['ATR'] = calculate_atr(data)
         data['RSI'] = calculate_rsi(data)
@@ -689,113 +710,168 @@ if ticker_input:
         data['MA20'] = data['Close'].rolling(20).mean()
         data['MA60'] = data['Close'].rolling(60).mean()
         data['ATR_Trailing'] = data['Close'].rolling(20).max() - (data['ATR'] * 2)
-        
-        # 3. 取得資料 (SIT 防錯：確保 data 至少有兩筆才能算 delta)
+
         curr = data.iloc[-1]
         prev = data.iloc[-2] if len(data) > 1 else curr
         price = float(curr['Close'])
 
-        # 這裡加一個 Debug 檢查點 (正式跑順後可以註解掉)
-        # st.sidebar.write(f"數據最後更新: {data.index[-1]}")
-
-        # 1. 顯示該股目前的持倉損益 (這部分你的邏輯是正確的)
+        # =============================
+        # 💰 持倉卡片
+        # =============================
         if ticker_input in active_costs:
-            st.write("---")
+            st.markdown('<div class="section-title">💰 持倉分析</div>', unsafe_allow_html=True)
+
             info = active_costs[ticker_input]
             c = float(info['cost']) if isinstance(info, dict) else float(info)
             q = float(info['qty']) if isinstance(info, dict) else 1.0
-            
-            pft = (price * q * 1000) - (c * q * 1000)
-            pft_r = (pft / (c * q * 1000)) * 100 if c > 0 else 0
-            
-            i0, i1, i2, i3 = st.columns(4) 
-            p_clr = "#FF4B4B" if pft > 0 else "#00B050"
-            i0.markdown(f"**預估損益 (報酬率)** \n<span style='color:{p_clr}; font-size:24px; font-weight:bold;'>{int(pft):,} ({pft_r:.2f}%)</span>", unsafe_allow_html=True)
-            i1.metric("買入均價", f"{c:.2f}")
-            i2.metric("投入本金", f"NT$ {int(c*q*1000):,}")
-            i3.metric("目前市值", f"NT$ {int(price*q*1000):,}")
 
-        # 2. 個股即時概況指標 (這部分也 OK)
-        st.subheader(f"📊 {ticker_input} {active_list.get(ticker_input, '')} 即時概況")
-        m1, m2, m3, m4, m5, m6 = st.columns(6)
-        m1.metric("當前股價", f"{price:.2f}", f"{price - float(prev['Close']):.2f}", delta_color="inverse")
-        m2.metric("60日高點", f"{data['High'].tail(60).max():.2f}")
-        m3.metric("5MA", f"{float(curr['MA5']):.2f}")
-        m4.metric("20MA", f"{float(curr['MA20']):.2f}")
-        m5.metric("60MA", f"{float(curr['MA60']):.2f}")
-        m6.metric("RSI(14)", f"{float(curr['RSI']):.1f}")
-        # 3. 法人籌碼數據
-        st.write("---")
-        st.subheader("👥 昨日三大法人買賣數據 (張)")
-        f_net, d_net, s_net = 0, 0, 0
+            pft = (price*q*1000)-(c*q*1000)
+            pft_r = (pft/(c*q*1000))*100 if c>0 else 0
+
+            cols = st.columns(4)
+
+            def card(col, title, val, updown=None):
+                cls = "up" if updown == "up" else "down" if updown == "down" else ""
+                col.markdown(f"""
+                <div class="card">
+                    <div class="metric-title">{title}</div>
+                    <div class="metric-value {cls}">{val}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            card(cols[0], "損益", f"{int(pft):,} ({pft_r:.2f}%)", "up" if pft>0 else "down")
+            card(cols[1], "成本", f"{c:.2f}")
+            card(cols[2], "投入", f"{int(c*q*1000):,}")
+            card(cols[3], "市值", f"{int(price*q*1000):,}")
+
+        # =============================
+        # 📊 即時概況（卡片化）
+        # =============================
+        st.markdown(f'<div class="section-title">📊 {ticker_input} 即時數據</div>', unsafe_allow_html=True)
+
+        cols = st.columns(6)
+        metrics = [
+            ("價格", f"{price:.2f}", price > prev['Close']),
+            ("60H", f"{data['High'].tail(60).max():.2f}", None),
+            ("MA5", f"{curr['MA5']:.2f}", None),
+            ("MA20", f"{curr['MA20']:.2f}", None),
+            ("MA60", f"{curr['MA60']:.2f}", None),
+            ("RSI", f"{curr['RSI']:.1f}", None),
+        ]
+
+        for col, (t, v, trend) in zip(cols, metrics):
+            cls = "up" if trend else "down" if trend==False else ""
+            col.markdown(f"""
+            <div class="card">
+                <div class="metric-title">{t}</div>
+                <div class="metric-value {cls}">{v}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # =============================
+        # 👥 法人籌碼
+        # =============================
         try:
-            df_chip = dl.taiwan_stock_institutional_investors(stock_id=ticker_input.split('.')[0], start_date=(datetime.now()-timedelta(days=10)).strftime('%Y-%m-%d'))
+            df_chip = dl.taiwan_stock_institutional_investors(
+                stock_id=ticker_input.split('.')[0],
+                start_date=(datetime.now()-timedelta(days=10)).strftime('%Y-%m-%d')
+            )
+
             if not df_chip.empty:
                 last_day = df_chip['date'].iloc[-1]
                 day_data = df_chip[df_chip['date'] == last_day]
-                f_net = (day_data[day_data['name'].str.contains('Foreign')]['buy'].sum() - day_data[day_data['name'].str.contains('Foreign')]['sell'].sum()) / 1000
-                d_net = (day_data[day_data['name'] == 'Investment_Trust']['buy'].sum() - day_data[day_data['name'] == 'Investment_Trust']['sell'].sum()) / 1000
-                s_net = (day_data[day_data['name'].str.contains('Dealer')]['buy'].sum() - day_data[day_data['name'].str.contains('Dealer')]['sell'].sum()) / 1000
-                c1, c2, c3 = st.columns(3)
-                for c, l, v in zip([c1, c2, c3], ["外資", "投信", "自營商"], [f_net, d_net, s_net]):
-                    clr = "#FF4B4B" if v > 0 else "#00B050"
-                    c.markdown(f"<div style='text-align:center;'><p style='color:gray;'>{l}</p><h2 style='color:{clr};'>{int(v):,}</h2></div>", unsafe_allow_html=True)
-                st.caption(f"更新日期：{last_day}")
-        except: st.error("籌碼抓取失敗")
 
-        # 4. 法人籌碼趨勢圖表
-        try:
-            if not df_chip.empty:
-                st.write("#### 📈 近期法人買賣趨勢 (張)")
-                df_chip['net'] = (df_chip['buy'] - df_chip['sell']) / 1000
-                df_trend = df_chip.pivot_table(index='date', columns='name', values='net', aggfunc='sum').fillna(0)
-                name_map = {'Foreign_Investor': '外資', 'Investment_Trust': '投信', 'Dealer_Self': '自營商(自有)', 'Dealer_Hedging': '自營商(避險)'}
-                df_trend = df_trend.rename(columns=lambda x: next((v for k, v in name_map.items() if k in x), x))
-                dealer_cols = [c for c in df_trend.columns if '自營商' in c]
-                if dealer_cols: df_trend['自營商'] = df_trend[dealer_cols].sum(axis=1)
+                f_net = (day_data[day_data['name'].str.contains('Foreign')]['buy'].sum()
+                         - day_data[day_data['name'].str.contains('Foreign')]['sell'].sum()) / 1000
+                d_net = (day_data[day_data['name'] == 'Investment_Trust']['buy'].sum()
+                         - day_data[day_data['name'] == 'Investment_Trust']['sell'].sum()) / 1000
+                s_net = (day_data[day_data['name'].str.contains('Dealer')]['buy'].sum()
+                         - day_data[day_data['name'].str.contains('Dealer')]['sell'].sum()) / 1000
 
-                fig_chip = go.Figure()
-                line_configs = {'外資': '#FF9900', '投信': '#CC00FF', '自營商': '#00B050'}
-                for label, color in line_configs.items():
-                    if label in df_trend.columns:
-                        fig_chip.add_trace(go.Scatter(x=df_trend.index, y=df_trend[label], mode='lines+markers', name=label, line=dict(color=color, width=2)))
-                fig_chip.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
-                fig_chip.update_layout(hovermode="x unified", height=350, template="plotly_dark")
-                st.plotly_chart(fig_chip, use_container_width=True)
-        except: pass
+                st.markdown('<div class="section-title">👥 法人動向</div>', unsafe_allow_html=True)
+                c1,c2,c3 = st.columns(3)
 
-        # 5. 中長期數據 (外資持股、月營收)
-        df_hold = get_foreign_holding(ticker_input)
-        if not df_hold.empty:
-            st.write("---"); st.subheader("🏛️ 外資持股中長期變動")
-            fig_h = make_subplots(specs=[[{"secondary_y": True}]])
-            fig_h.add_trace(go.Scatter(x=data.index, y=data['Close'], name="股價", line=dict(color='gray', width=1)), secondary_y=False)
-            fig_h.add_trace(go.Scatter(x=df_hold['date'], y=df_hold['ForeignInvestmentSharesRatio'], name="外資持股%", fill='tozeroy', line=dict(color='#00CCFF')), secondary_y=True)
-            fig_h.update_layout(height=400, template="plotly_dark"); st.plotly_chart(fig_h, use_container_width=True)
+                for c,l,v in zip([c1,c2,c3],["外資","投信","自營商"],[f_net,d_net,s_net]):
+                    cls = "up" if v>0 else "down"
+                    c.markdown(f"""
+                    <div class="card">
+                        <div class="metric-title">{l}</div>
+                        <div class="metric-value {cls}">{int(v):,}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-        df_rev = get_monthly_revenue(ticker_input)
-        if not df_rev.empty:
-            st.write("---"); st.subheader("📈 月營收成長趨勢")
-            df_rev['yoy'] = df_rev['revenue'].pct_change(12) * 100
-            fig_r = go.Figure()
-            fig_r.add_trace(go.Bar(x=df_rev['date'], y=df_rev['revenue'], name="營收", marker_color='rgba(0, 255, 150, 0.4)'))
-            fig_r.add_trace(go.Scatter(x=df_rev['date'], y=df_rev['yoy'], name="年增率", line=dict(color='red'), yaxis="y2"))
-            fig_r.update_layout(height=400, template="plotly_dark", yaxis2=dict(overlaying="y", side="right"))
-            st.plotly_chart(fig_r, use_container_width=True)
-            st.info(f"📊 **營收速報**：本月營收為 **{df_rev['revenue'].iloc[-1]/1e8:.2f} 億**，YoY: **{df_rev['yoy'].iloc[-1]:.2f}%**")
+                st.caption(f"更新：{last_day}")
 
-        # 6. 技術指標主 K 線圖
-        st.write("---"); st.subheader(f"📊 {ticker_input} 技術指標全覽")
-        fig_main = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.06, row_width=[0.2, 0.2, 0.2, 0.4])
-        fig_main.add_trace(go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name="K線"), row=1, col=1)
-        fig_main.add_trace(go.Scatter(x=data.index, y=data['MA5'], name="5MA", line=dict(color='#FFFFFF', width=1.5)), row=1, col=1)
-        fig_main.add_trace(go.Scatter(x=data.index, y=data['MA20'], name="20MA", line=dict(color='orange', width=1.5)), row=1, col=1)
-        fig_main.add_trace(go.Scatter(x=data.index, y=data['MA60'], name="60MA", line=dict(color='#00FF00', width=1.5)), row=1, col=1)
-        fig_main.add_trace(go.Scatter(x=data.index, y=data['ATR_Trailing'], name="ATR止損線", line=dict(color='#FF00FF', width=2, dash='longdash')), row=1, col=1)
-        fig_main.add_trace(go.Bar(x=data.index, y=data['Volume'], name="成交量", marker_color='rgba(31, 119, 180, 0.7)'), row=2, col=1)
-        fig_main.add_trace(go.Scatter(x=data.index, y=data['RSI'], name="RSI", line=dict(color='yellow')), row=3, col=1)
-        fig_main.add_trace(go.Scatter(x=data.index, y=data['MACD'], name="MACD", line=dict(color='#00CCFF')), row=4, col=1)
-        fig_main.update_layout(height=900, template="plotly_dark", xaxis_rangeslider_visible=False); st.plotly_chart(fig_main, use_container_width=True)
+        except:
+            st.error("籌碼抓取失敗")
+
+        # =============================
+        # 📈 法人趨勢
+        # =============================
+        if not df_chip.empty:
+
+            df_chip['net'] = (df_chip['buy'] - df_chip['sell']) / 1000
+            df_trend = df_chip.pivot_table(index='date', columns='name', values='net', aggfunc='sum').fillna(0)
+
+            name_map = {'Foreign_Investor':'外資','Investment_Trust':'投信','Dealer_Self':'自營商','Dealer_Hedging':'自營商'}
+            df_trend = df_trend.rename(columns=lambda x: next((v for k,v in name_map.items() if k in x), x))
+
+            fig_chip = go.Figure()
+
+            for label,color in {'外資':'#2962FF','投信':'#FF6D00','自營商':'#00C853'}.items():
+                if label in df_trend.columns:
+                    fig_chip.add_trace(go.Scatter(x=df_trend.index,y=df_trend[label],name=label,line=dict(color=color)))
+
+            fig_chip.update_layout(template="plotly_dark",height=300,hovermode="x unified")
+            st.plotly_chart(fig_chip,use_container_width=True)
+
+        # =============================
+        # 📊🔥 合併主圖（TV風格）
+        # =============================
+        st.markdown('<div class="section-title">📊 技術分析</div>', unsafe_allow_html=True)
+
+        fig = make_subplots(
+            rows=3, cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.03,
+            row_heights=[0.6,0.2,0.2]
+        )
+
+        # K線
+        fig.add_trace(go.Candlestick(
+            x=data.index,
+            open=data['Open'],
+            high=data['High'],
+            low=data['Low'],
+            close=data['Close'],
+            increasing_line_color='#26A69A',
+            decreasing_line_color='#EF5350'
+        ), row=1,col=1)
+
+        # MA + ATR
+        fig.add_trace(go.Scatter(x=data.index,y=data['MA5'],line=dict(color='white',width=1)),row=1,col=1)
+        fig.add_trace(go.Scatter(x=data.index,y=data['MA20'],line=dict(color='orange',width=1)),row=1,col=1)
+        fig.add_trace(go.Scatter(x=data.index,y=data['MA60'],line=dict(color='green',width=1)),row=1,col=1)
+        fig.add_trace(go.Scatter(x=data.index,y=data['ATR_Trailing'],line=dict(color='magenta',dash='dot')),row=1,col=1)
+
+        # Volume
+        fig.add_trace(go.Bar(x=data.index,y=data['Volume'],marker_color='rgba(100,149,237,0.4)'),row=2,col=1)
+
+        # RSI + MACD 合併
+        fig.add_trace(go.Scatter(x=data.index,y=data['RSI'],name="RSI",line=dict(color='yellow')),row=3,col=1)
+        fig.add_trace(go.Scatter(x=data.index,y=data['MACD'],name="MACD",line=dict(color='#00CCFF')),row=3,col=1)
+
+        fig.update_layout(
+            template="plotly_dark",
+            height=800,
+            hovermode="x unified",
+            margin=dict(l=10,r=10,t=10,b=10),
+            xaxis_rangeslider_visible=False
+        )
+
+        fig.update_yaxes(gridcolor="#2A2E39")
+
+        st.plotly_chart(fig,use_container_width=True)
 
         # 7. AI 診斷與評分邏輯
         st.write("---")
