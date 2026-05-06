@@ -212,6 +212,7 @@ def show_full_portfolio_report(active_costs, active_list):
 
     with st.spinner("正在獲取最新報價..."):
         for t_code, info in active_costs.items():
+            t_code = str(t_code).strip()
             if "." not in t_code:
                 t_code_yf = f"{t_code}.TW"
             else:
@@ -220,7 +221,9 @@ def show_full_portfolio_report(active_costs, active_list):
                 df_recent = fetch_yf_data_cached(t_code_yf, period="5d", interval="1d")
                 if df_recent is None or df_recent.empty:
                     continue
-                
+                if 'Close' not in df_recent:
+                    print("no Close:", t_code_yf)
+                    continue
                 c_price = df_recent['Close'].iloc[-1]
                 name = active_list.get(t_code, "未知")
 
