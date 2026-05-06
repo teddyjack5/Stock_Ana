@@ -66,17 +66,15 @@ st.markdown("""
 # 【新增效能優化】 - 集中式快取管理 (解決介面卡頓)
 # ==============================================================================
 @st.cache_data(ttl=300)
-def fetch_yf_data_cached(ticker, period="5d", interval="1d"):
-
+def fetch_yf_data_cached(ticker):
     ticker = str(ticker).strip().upper()
 
     try:
         df = yf.download(
-            tickers=ticker,
-            period=period,
-            interval=interval,
+            ticker,
+            period="5d",
+            interval="1d",
             progress=False,
-            auto_adjust=False,
             threads=False
         )
 
@@ -86,10 +84,13 @@ def fetch_yf_data_cached(ticker, period="5d", interval="1d"):
         if "Close" not in df.columns:
             return None
 
+        if df["Close"].dropna().empty:
+            return None
+
         return df
 
     except Exception as e:
-        print("yfinance error:", ticker, e)
+        print("yf error:", ticker, e)
         return None
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -672,7 +673,7 @@ def calculate_atr(df, window=14):
 with tab_portfolio:
     total_cost, total_value = 0.0, 0.0
     processed_data = []
-    st.write(fetch_yf_data_cached("2330.TW"))
+    
     if active_costs:
         with st.spinner("正在同步雲端數據並計算總資產..."):
             for t_code, info in active_costs.items():
