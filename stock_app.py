@@ -660,21 +660,37 @@ with tab_portfolio:
             labels = [d['label'] for d in processed_data]
             values = [d['value'] for d in processed_data]
             
+            # 定義一組具備質感的現代配色
+            colors = ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692']
+
             fig_pie = go.Figure(data=[go.Pie(
                 labels=labels, 
                 values=values, 
-                hole=.4,
+                hole=.5, # 稍微調大中心洞口，增加通透感
                 textinfo='label+percent', 
-                textposition='inside',
-                marker=dict(line=dict(color='#1e1e1e', width=2))
+                textposition='outside', # 文字改到外面，避免遮擋立體感
+                pull=[0.05] * len(labels), # 關鍵：將每個區塊微幅抽離，創造立體空隙感
+                marker=dict(
+                    colors=colors,
+                    # 加入深色線條增加區塊深度感
+                    line=dict(color='#111111', width=3) 
+                ),
+                hoverinfo="label+value+percent",
+                rotation=90 # 旋轉角度讓圖表看起來更平衡
             )])
             
             fig_pie.update_layout(
                 showlegend=False, 
                 template="plotly_dark",
-                margin=dict(t=10, b=10, l=10, r=10),
-                height=380,
+                # 移除背景色，讓它與你的卡片融合
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(t=30, b=30, l=30, r=30),
+                height=400,
+                # 加入標註或陰影感
+                annotations=[dict(text='資產<br>配置', x=0.5, y=0.5, font_size=20, showarrow=False)]
             )
+            
             st.plotly_chart(fig_pie, use_container_width=True)
             
     # 顯示下方的智慧點評 (跨欄顯示)
