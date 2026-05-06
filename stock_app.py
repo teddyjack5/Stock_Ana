@@ -672,7 +672,7 @@ def calculate_atr(df, window=14):
 with tab_portfolio:
     total_cost, total_value = 0.0, 0.0
     processed_data = []
-
+    st.write(fetch_yf_data_cached("2330.TW"))
     if active_costs:
         with st.spinner("正在同步雲端數據並計算總資產..."):
             for t_code, info in active_costs.items():
