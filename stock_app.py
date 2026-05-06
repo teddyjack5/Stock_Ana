@@ -259,9 +259,9 @@ def show_full_portfolio_report(active_costs, active_list):
         styled_df,
         column_config={
             "報酬率": st.column_config.NumberColumn("報酬率 (%)", format="%.2f%%"),
-            "投入本金": st.column_config.NumberColumn("投入本金", format="¥%d"), # 使用千分位
-            "目前市值": st.column_config.NumberColumn("目前市值", format="¥%d"),
-            "損益": st.column_config.NumberColumn("損益", format="¥%d"),
+            "投入本金": st.column_config.NumberColumn("投入本金", format="%d"), # 使用千分位
+            "目前市值": st.column_config.NumberColumn("目前市值", format="%d"),
+            "損益": st.column_config.NumberColumn("損益", format="%d"),
         },
         use_container_width=True,
         hide_index=True
