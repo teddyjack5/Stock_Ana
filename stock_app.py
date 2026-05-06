@@ -65,11 +65,32 @@ st.markdown("""
 # ==============================================================================
 # 【新增效能優化】 - 集中式快取管理 (解決介面卡頓)
 # ==============================================================================
-@st.cache_data(ttl=300) # 快取 5 分鐘，避免頻繁呼叫 yfinance
-def fetch_yf_data_cached(ticker, period=None, interval=None, start=None):
-    if start:
-        return yf.download(ticker, start=start, progress=False)
-    return yf.download(ticker, period=period, interval=interval, progress=False)
+@st.cache_data(ttl=300)
+def fetch_yf_data_cached(ticker, period="5d", interval="1d"):
+
+    ticker = str(ticker).strip().upper()
+
+    try:
+        df = yf.download(
+            tickers=ticker,
+            period=period,
+            interval=interval,
+            progress=False,
+            auto_adjust=False,
+            threads=False
+        )
+
+        if df is None or df.empty:
+            return None
+
+        if "Close" not in df.columns:
+            return None
+
+        return df
+
+    except Exception as e:
+        print("yfinance error:", ticker, e)
+        return None
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_chip_data_cached(stock_id):
