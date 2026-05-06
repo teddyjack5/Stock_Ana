@@ -230,7 +230,7 @@ def show_full_portfolio_report(active_costs, active_list):
         return 'color: white'
         
     st.dataframe(
-        df_report.style.map(color_pnl_custom, subset=['損益', '報酬率']), 
+        df_report.map(color_pnl_custom, subset=['損益', '報酬率']), 
         column_config={
             "報酬率": st.column_config.NumberColumn(format="%.2f%%"), # 自動補上 % 顯示
             "成本價": st.column_config.NumberColumn(format="%.2f"),
