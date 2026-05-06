@@ -254,7 +254,6 @@ def show_full_portfolio_report(active_costs, active_list):
 
                 if "Close" not in df_recent.columns:
                     st.warning(f"❌ 沒 Close 欄位: {t_code_yf}")
-                    continueo Close:", t_code_yf)
                     continue
                 c_price = df_recent['Close'].iloc[-1]
                 name = active_list.get(t_code, "未知")
