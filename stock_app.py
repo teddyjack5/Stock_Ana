@@ -231,7 +231,7 @@ def show_full_portfolio_report(active_costs, active_list):
         return
 
     report_data = []
-    st.write("DEBUG active_costs keys:", list(active_costs.keys())[:10])
+
     with st.spinner("正在獲取最新報價..."):
         for t_code, info in active_costs.items():
             t_code = str(t_code).strip()
