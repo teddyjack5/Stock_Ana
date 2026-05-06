@@ -74,12 +74,10 @@ def fetch_yf_data_cached(ticker, period="5d", interval="1d"):
         return None
 
     try:
-        df = yf.download(
-            tickers=ticker,
+        stock = yf.Ticker(ticker)
+        df = stock.history(
             period=period or "5d",
             interval=interval or "1d",
-            progress=False,
-            threads=False,
             auto_adjust=False
         )
 
@@ -92,8 +90,7 @@ def fetch_yf_data_cached(ticker, period="5d", interval="1d"):
         return df
 
     except Exception as e:
-        # 🔥 不要 silent fail
-        st.error(f"YF ERROR {ticker}: {e}")
+        st.error(f"YF 抓取失敗 {ticker}: {e}")
         return None
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -255,7 +252,19 @@ def show_full_portfolio_report(active_costs, active_list):
                 if "Close" not in df_recent.columns:
                     st.warning(f"❌ 沒 Close 欄位: {t_code_yf}")
                     continue
-                c_price = df_recent['Close'].iloc[-1]
+                
+                # ✅ 關鍵修改：強制轉型為 float，雙重防護 pandas 的結構變動
+                c_price_raw = df_recent['Close'].iloc[-1]
+                if isinstance(c_price_raw, pd.Series):
+                    c_price = float(c_price_raw.iloc[0])
+                else:
+                    c_price = float(c_price_raw)
+                    
+                # 檢查價格是否異常 (例如還沒開盤導致的 NaN)
+                if pd.isna(c_price):
+                    st.warning(f"⚠️ {t_code_yf} 價格為 NaN，跳過計算。")
+                    continue
+
                 name = active_list.get(t_code, "未知")
 
                 cost = float(info['cost']) if isinstance(info, dict) else float(info)
@@ -275,11 +284,12 @@ def show_full_portfolio_report(active_costs, active_list):
                     "投入本金": int(total_cost),
                     "目前市值": int(market_value),
                     "損益": int(diff),
-                    "報酬率": roi   # ✅ 保持數值
+                    "報酬率": roi 
                 })
 
             except Exception as e:
-                print("error:", t_code, e)
+                # ✅ 關鍵修改：用 st.error 取代 print，讓真正的錯誤直接顯示在網頁上
+                st.error(f"❌ 計算 {t_code} 時發生錯誤: {e}")
                 continue
 
     # ❗ 防呆（重要）
