@@ -71,18 +71,35 @@ def fetch_yf_data_cached(ticker, period=None, interval=None, start=None):
         return yf.download(ticker, start=start, progress=False)
     return yf.download(ticker, period=period, interval=interval, progress=False)
 
-@st.cache_data(ttl=3600) # 法人籌碼一天只會更新一次，快取 1 小時
+@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_chip_data_cached(stock_id):
+
     dl_cache = DataLoader()
+
     try:
         if "FINMIND_TOKEN" in st.secrets:
             dl_cache.set_token(token=st.secrets["FINMIND_TOKEN"])
-        return dl_cache.taiwan_stock_institutional_investors(
+
+        df = dl_cache.taiwan_stock_institutional_investors(
             stock_id=stock_id.split('.')[0],
-            start_date=(datetime.now()-timedelta(days=10)).strftime('%Y-%m-%d')
+            start_date=(datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
         )
-    except:
-        return pd.DataFrame()
+
+        # ✅ 關鍵修正1：避免 cache 空資料
+        if df is None or df.empty:
+            return None
+
+        # ✅ 關鍵修正2：確保欄位存在（防 API 變動）
+        required_cols = {"date", "name", "buy", "sell"}
+        if not required_cols.issubset(df.columns):
+            return None
+
+        return df
+
+    except Exception as e:
+        # ✅ 不要 silent fail（你之前最大問題）
+        print("fetch_chip_data_cached error:", e)
+        return None
 
 @st.cache_data(ttl=3600) # 新聞快取 1 小時
 def fetch_news_data_cached(stock_id):
@@ -565,7 +582,7 @@ show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
 # 【新增 UI 優化】 - st.tabs 模組化分頁架構
 # ==============================================================================
 tab_portfolio, tab_analysis,  tab_news = st.tabs([
-    "🏢 庫存總覽", "📈 個股深度分析",  "📰 產經動態"
+    "📦 庫存總覽", "📈 個股深度分析",  "📰 產經動態"
 ])
 
 # ==============================================================================
@@ -640,7 +657,7 @@ with tab_portfolio:
         prefix = ""
     
 
-    st.write("### 🏢 小鐵的雲端投資組合")
+    st.write("### ☁️ 小鐵的雲端投資組合")
     col_summary, col_chart = st.columns([3.5, 6.5])
 
     with col_summary:
