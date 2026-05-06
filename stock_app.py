@@ -724,7 +724,7 @@ with tab_portfolio:
         p_color = "#FFFFFF" # 白色
         prefix = ""
     
-    st.write(ticker_input, type(ticker_input))
+    st.write("DEBUG:", ticker_input, type(ticker_input))
     st.write("### ☁️ 小鐵的雲端投資組合")
     col_summary, col_chart = st.columns([3.5, 6.5])
 
