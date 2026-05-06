@@ -11,7 +11,6 @@ from datetime import datetime, timedelta
 from FinMind.data import DataLoader
 from plotly.subplots import make_subplots
 from streamlit_gsheets import GSheetsConnection
-from streamlit_echarts import st_echarts
 from bs4 import BeautifulSoup
 
 # ==============================================================================
@@ -65,75 +64,52 @@ st.markdown("""
 # ==============================================================================
 # 【新增效能優化】 - 集中式快取管理 (解決介面卡頓)
 # ==============================================================================
-@st.cache_data(ttl=300)
-def fetch_yf_data_cached(ticker, period="5d", interval="1d"):
+@st.cache_data(ttl=300) # 快取 5 分鐘，避免頻繁呼叫 yfinance
+def fetch_yf_data_cached(ticker, period=None, interval=None, start=None):
+    if start:
+        return yf.download(ticker, start=start, progress=False)
+    return yf.download(ticker, period=period, interval=interval, progress=False)
 
-    ticker = str(ticker).strip().upper()
-
-    if not ticker or ticker == "NONE":
-        return None
-
-    try:
-        stock = yf.Ticker(ticker)
-        df = stock.history(
-            period=period or "5d",
-            interval=interval or "1d",
-            auto_adjust=False
-        )
-
-        if df is None or df.empty:
-            return None
-
-        if "Close" not in df.columns:
-            return None
-
-        return df
-
-    except Exception as e:
-        st.error(f"YF 抓取失敗 {ticker}: {e}")
-        return None
-
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600) # 法人籌碼一天只會更新一次，快取 1 小時
 def fetch_chip_data_cached(stock_id):
-
     dl_cache = DataLoader()
-
     try:
-        if "FINMIND_TOKEN" in st.secrets:
-            dl_cache.set_token(token=st.secrets["FINMIND_TOKEN"])
-
-        df = dl_cache.taiwan_stock_institutional_investors(
+        # 修正：使用 st.secrets.get 安全獲取，避免 KeyError
+        token = st.secrets.get("FINMIND_TOKEN", None)
+        if token:
+            dl_cache.set_token(token=token)
+            
+        # 修正：必須使用 _buy_sell 才是抓取個股三大法人
+        # 修正：天數拉長到 15 天，避免遇到春節或連續長假抓不到最新一筆資料
+        df = dl_cache.taiwan_stock_institutional_investors_buy_sell(
             stock_id=stock_id.split('.')[0],
-            start_date=(datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+            start_date=(datetime.now()-timedelta(days=15)).strftime('%Y-%m-%d')
         )
-
-        # ✅ 關鍵修正1：避免 cache 空資料
-        if df is None or df.empty:
-            raise ValueError("No data fetched")
-
-        # ✅ 關鍵修正2：確保欄位存在（防 API 變動）
-        required_cols = {"date", "name", "buy", "sell"}
-        if not required_cols.issubset(df.columns):
-            raise ValueError("Missing columns")
-
+        
+        # 修正：確保買賣欄位被轉換為數值，防呆處理
+        if not df.empty and 'buy' in df.columns and 'sell' in df.columns:
+            df['buy'] = pd.to_numeric(df['buy'], errors='coerce').fillna(0)
+            df['sell'] = pd.to_numeric(df['sell'], errors='coerce').fillna(0)
+            
         return df
-
     except Exception as e:
-        # ✅ 不要 silent fail（你之前最大問題）
-        print("fetch_chip_data_cached error:", e)
-        return None
+        # 印出錯誤方便終端機除錯，不再無聲吞噬
+        print(f"籌碼讀取錯誤: {e}")
+        return pd.DataFrame()
 
 @st.cache_data(ttl=3600) # 新聞快取 1 小時
 def fetch_news_data_cached(stock_id):
     dl_cache = DataLoader()
     try:
-        if "FINMIND_TOKEN" in st.secrets:
-            dl_cache.set_token(token=st.secrets["FINMIND_TOKEN"])
+        token = st.secrets.get("FINMIND_TOKEN", None)
+        if token:
+            dl_cache.set_token(token=token)
         return dl_cache.taiwan_stock_news(
             stock_id=stock_id.split('.')[0], 
             start_date=(datetime.now() - timedelta(days=5)).strftime('%Y-%m-%d')
         )
-    except:
+    except Exception as e:
+        print(f"新聞讀取錯誤: {e}")
         return pd.DataFrame()
 
 # 初始化 DataLoader (用於其他未快取的輕量操作)
@@ -148,6 +124,10 @@ def analyze_chip_trend(df_chip):
 
     df = df_chip.copy()
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    
+    # 再次防呆確保型態
+    df['buy'] = pd.to_numeric(df['buy'], errors='coerce').fillna(0)
+    df['sell'] = pd.to_numeric(df['sell'], errors='coerce').fillna(0)
 
     # 計算淨買賣
     df['net'] = (df['buy'] - df['sell']) / 1000
@@ -184,10 +164,11 @@ def analyze_chip_trend(df_chip):
 # ==============================================================================
 # 第一部分：【雲端基礎設施】 - 處理 Google Sheets 連線與資料存取
 # ==============================================================================
-SCRIPT_URL = st.secrets["GOOGLE_SCRIPT_URL"]
+SCRIPT_URL = st.secrets.get("GOOGLE_SCRIPT_URL", "")
 
 def load_db_from_sheets():
-    """透過 Apps Script 網址讀取 JSON 格式的整包雲端數據 (庫存+帳務+密碼)"""
+    if not SCRIPT_URL:
+        return {"password_hash": None, "list": {}, "costs": {}}
     try:
         response = requests.get(SCRIPT_URL, timeout=10)
         if response.status_code == 200:
@@ -197,7 +178,8 @@ def load_db_from_sheets():
     return {"password_hash": None, "list": {}, "costs": {}}
 
 def save_db_to_sheets(db):
-    """將目前的 session_state 數據發送到雲端 Apps Script 進行儲存"""
+    if not SCRIPT_URL:
+        return False
     try:
         response = requests.post(SCRIPT_URL, json=db, timeout=15)
         if "Success" in response.text:
@@ -225,48 +207,20 @@ def hash_password(password):
 # 1. 顯示全帳戶損益明細
 @st.dialog("📋 全帳戶個股損益明細", width="large")
 def show_full_portfolio_report(active_costs, active_list):
-
     if not active_costs:
         st.warning("目前庫存中沒有帳務資料。")
         return
 
     report_data = []
-
     with st.spinner("正在獲取最新報價..."):
         for t_code, info in active_costs.items():
-            t_code = str(t_code).strip()
-            if "." not in t_code:
-                t_code_yf = f"{t_code}.TW"
-            else:
-                t_code_yf = t_code
             try:
-                df_recent = fetch_yf_data_cached(t_code_yf, period="5d", interval="1d")
-                if df_recent is None:
-                    st.warning(f"❌ 無資料: {t_code_yf}")
-                    continue
-
-                if df_recent.empty:
-                    st.warning(f"⚠️ 空資料: {t_code_yf}")
-                    continue
-
-                if "Close" not in df_recent.columns:
-                    st.warning(f"❌ 沒 Close 欄位: {t_code_yf}")
-                    continue
+                # 使用快取取代原本的 yf.Ticker
+                df_recent = fetch_yf_data_cached(t_code, period="1d", interval="1d")
+                if df_recent.empty: continue
                 
-                # ✅ 關鍵修改：強制轉型為 float，雙重防護 pandas 的結構變動
-                c_price_raw = df_recent['Close'].iloc[-1]
-                if isinstance(c_price_raw, pd.Series):
-                    c_price = float(c_price_raw.iloc[0])
-                else:
-                    c_price = float(c_price_raw)
-                    
-                # 檢查價格是否異常 (例如還沒開盤導致的 NaN)
-                if pd.isna(c_price):
-                    st.warning(f"⚠️ {t_code_yf} 價格為 NaN，跳過計算。")
-                    continue
-
+                c_price = df_recent['Close'].iloc[-1]
                 name = active_list.get(t_code, "未知")
-
                 cost = float(info['cost']) if isinstance(info, dict) else float(info)
                 qty = float(info['qty']) if isinstance(info, dict) else 0.0
                 
@@ -274,74 +228,44 @@ def show_full_portfolio_report(active_costs, active_list):
                 market_value = c_price * qty * 1000
                 diff = market_value - total_cost
                 roi = (diff / total_cost * 100) if total_cost > 0 else 0
-
+                
                 report_data.append({
-                    "代號": t_code,
-                    "名稱": name,
-                    "成本價": cost,
-                    "現價": c_price,
-                    "張數": qty,
-                    "投入本金": int(total_cost),
-                    "目前市值": int(market_value),
-                    "損益": int(diff),
-                    "報酬率": roi 
+                    "代號": t_code, "名稱": name, "成本價": f"{cost:.2f}",
+                    "現價": f"{c_price:.2f}", "張數": qty,
+                    "投入本金": int(total_cost), "目前市值": int(market_value),
+                    "損益": int(diff), "報酬率": f"{roi:.2f}%"
                 })
+            except: continue
 
-            except Exception as e:
-                # ✅ 關鍵修改：用 st.error 取代 print，讓真正的錯誤直接顯示在網頁上
-                st.error(f"❌ 計算 {t_code} 時發生錯誤: {e}")
-                continue
+    if report_data:
+        df_report = pd.DataFrame(report_data)
+        df_report['報酬率'] = pd.to_numeric(df_report['報酬率'].astype(str).str.replace('%', ''), errors='coerce')
+        df_report = df_report.sort_values(by='報酬率', ascending=False)
 
-    # ❗ 防呆（重要）
-    if not report_data:
-        st.warning("⚠️ 無法取得任何報價資料")
-        return
-
-    df_report = pd.DataFrame(report_data)
-
-    # 排序
-    df_report = df_report.sort_values(by='報酬率', ascending=False)
-
-    # =============================
-    # 🎨 顏色函數
-    # =============================
-    def color_pnl_custom(val):
+    def color_pnl_custom(v):
         try:
-            val = float(val)
-        except:
-            return ""
-
-        if val > 0:
-            return "color: #EF5350; font-weight:600;"
-        elif val < 0:
-            return "color: #26A69A; font-weight:600;"
-        return ""
-
-    # =============================
-    # 📊 顯示
-    # =============================
+            val = float(v)
+            if val > 0: return 'color: #FF4B4B' # 紅色
+            if val < 0: return 'color: #26A69A' # 【UI優化】改用波斯綠
+        except (ValueError, TypeError):
+            pass
+        return 'color: white'
+        
     st.dataframe(
-        df_report.style.map(color_pnl_custom, subset=['損益', '報酬率']),
+        df_report.style.map(color_pnl_custom, subset=['損益', '報酬率']), 
         column_config={
-            "報酬率": st.column_config.NumberColumn(format="%.2f%%"),
+            "報酬率": st.column_config.NumberColumn(format="%.2f%%"), # 自動補上 % 顯示
             "成本價": st.column_config.NumberColumn(format="%.2f"),
             "現價": st.column_config.NumberColumn(format="%.2f"),
         },
-        use_container_width=True,
+        use_container_width=True, 
         hide_index=True
     )
-
-    # =============================
-    # 📈 合計
-    # =============================
-    total_p = df_report['損益'].sum()
-
+    
+    # 計算合計時也要防呆，避免字串相加
+    total_p = sum(pd.to_numeric(df_report['損益'], errors='coerce').fillna(0))
     st.divider()
-    st.metric(
-        "合計預估總損益",
-        f"NT$ {int(total_p):,}",
-        delta=f"{int(total_p):,}"
-    )
+    st.metric("合計預估總損益", f"NT$ {int(total_p):,}", delta=f"{int(total_p):,}")
 
 # 2. 新增庫存股票
 @st.dialog("➕ 新增股票至清單")
@@ -662,7 +586,7 @@ show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
 # 【新增 UI 優化】 - st.tabs 模組化分頁架構
 # ==============================================================================
 tab_portfolio, tab_analysis,  tab_news = st.tabs([
-    "📦 庫存總覽", "📈 個股深度分析",  "📰 產經動態"
+    "🏢 庫存總覽", "📈 個股深度分析",  "📰 產經動態"
 ])
 
 # ==============================================================================
@@ -692,7 +616,7 @@ def calculate_atr(df, window=14):
 with tab_portfolio:
     total_cost, total_value = 0.0, 0.0
     processed_data = []
-    
+
     if active_costs:
         with st.spinner("正在同步雲端數據並計算總資產..."):
             for t_code, info in active_costs.items():
@@ -726,94 +650,54 @@ with tab_portfolio:
     # 計算損益
     profit = total_value - total_cost
     roi = (profit / total_cost * 100) if total_cost > 0 else 0
-    if profit > 0:
-        p_color = "#FF4B4B" # 紅色
-        prefix = "+"
-    elif profit < 0:
-        p_color = "#00BA81" # 綠色
-        prefix = ""
-    else:
-        p_color = "#FFFFFF" # 白色
-        prefix = ""
-    
-    
-    st.write("### ☁️ 小鐵的雲端投資組合")
-    col_summary, col_chart = st.columns([3.5, 6.5])
+    p_color = "#FF4B4B" if profit > 0 else ("" if profit < 0 else "#FFFFFF")
+
+    st.write("### 🏢 小鐵的雲端投資組合")
+    col_summary, col_chart = st.columns([3.0, 7.0])
 
     with col_summary:
         st.markdown(f"""
             <div style="
-                background-color: #1e1e1e; 
-                padding: 25px; 
-                border-radius: 20px; 
-                border-left: 12px solid {p_color}; 
-                height: 380px; 
-                display: flex; 
-                flex-direction: column; 
-                justify-content: space-between;
-                box-shadow: 5px 5px 15px rgba(0,0,0,0.3);
+                background-color: #1e1e1e; padding: 20px; border-radius: 15px; 
+                border-left: 10px solid {p_color}; height: 350px; 
+                display: flex; flex-direction: column; justify-content: space-around;
             ">
                 <div>
-                    <p style="color: #888; margin: 0; font-size: 14px; font-weight: bold;">資產總市值</p>
-                    <h2 style="color: white; margin: 0; font-size: 28px; font-family: 'Courier New';">NT$ {int(total_value):,}</h2>
+                    <p style="color: gray; margin: 0; font-size: 14px;">資產總市值</p>
+                    <h2 style="color: white; margin: 0; font-size: 24px;">NT$ {int(total_value):,}</h2>
                 </div>
-                <div style="border-top: 1px solid #333; border-bottom: 1px solid #333; padding: 20px 0;">
-                    <p style="color: #888; margin: 0; font-size: 14px; font-weight: bold;">預估總損益</p>
-                    <h1 style="color: {p_color}; margin: 0; font-size: 38px; font-weight: 800;">{prefix}{int(profit):,}</h1>
+                <div style="border-top: 1px solid #444; border-bottom: 1px solid #444; padding: 15px 0;">
+                    <p style="color: gray; margin: 0; font-size: 14px;">預估總損益</p>
+                    <h1 style="color: {p_color}; margin: 0; font-size: 32px;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
                 </div>
                 <div>
-                    <p style="color: #888; margin: 0; font-size: 14px; font-weight: bold;">總報酬率</p>
-                    <h2 style="color: {p_color}; margin: 0; font-size: 28px; font-weight: bold;">{prefix}{roi:.2f}%</h2>
+                    <p style="color: gray; margin: 0; font-size: 14px;">總報酬率</p>
+                    <h2 style="color: {p_color}; margin: 0; font-size: 24px;">{roi:.2f}%</h2>
                 </div>
             </div>
         """, unsafe_allow_html=True)
 
     with col_chart:
         if processed_data:
-            # 1. 格式化資料為 ECharts 格式
-            chart_data = [{"value": d['value'], "name": d['label']} for d in processed_data]
-        
-            # 2. 設定 ECharts 配置項 (南丁格爾玫瑰圖樣式)
-            options = {
-                "backgroundColor": "rgba(0,0,0,0)", # 透明背景，完美契合你的深色 UI
-                "tooltip": {
-                    "trigger": "item", 
-                    "formatter": "{b}: {c} ({d}%)",
-                    "backgroundColor": "#2a2e39",
-                    "textStyle": {"color": "#fff"}
-                },
-                "legend": {
-                    "orient": "horizontal",
-                    "bottom": "0",
-                    "textStyle": {"color": "#d1d4dc"}
-                },
-                "series": [
-                    {
-                        "name": "資產配置",
-                        "type": "pie",
-                        "radius": ["15%", "75%"], # 內外半徑，創造層次感
-                        "center": ["50%", "45%"],
-                        "roseType": "area", # 關鍵：南丁格爾玫瑰模式，數值越大半徑越長
-                        "itemStyle": {
-                            "borderRadius": 12, # 圓角
-                            "shadowBlur": 20,   # 陰影，營造 2.5D 立體感
-                            "shadowColor": "rgba(0, 0, 0, 0.5)"
-                        },
-                        "data": chart_data,
-                        "label": {
-                            "show": True,
-                            "color": "#fff",
-                            "formatter": "{b}\n{d}%",
-                            "fontSize": 14
-                        },
-                        # 使用與你原本一致的專業配色
-                        "color": ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692']
-                    }
-                ]
-            }
-        
-            # 3. 渲染圖表
-            st_echarts(options=options, height="450px")
+            labels = [d['label'] for d in processed_data]
+            values = [d['value'] for d in processed_data]
+            
+            fig_pie = go.Figure(data=[go.Pie(
+                labels=labels, 
+                values=values, 
+                hole=.4,
+                textinfo='label+percent', 
+                textposition='inside',
+                marker=dict(line=dict(color='#1e1e1e', width=2))
+            )])
+            
+            fig_pie.update_layout(
+                showlegend=False, 
+                template="plotly_dark",
+                margin=dict(t=10, b=10, l=10, r=10),
+                height=380,
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
             
     # 顯示下方的智慧點評 (跨欄顯示)
     if 'values' in locals() and values:
@@ -822,9 +706,9 @@ with tab_portfolio:
         max_pct = (values[max_idx] / sum(values)) * 100
         
         if max_pct > 50:
-            st.warning(f"⚠️ **小鐵提醒**：您的資金高度集中在 **{max_stock}** ({max_pct:.1f}%)。若該股波動較大，將顯著影響總資產水位。")
+            st.warning(f"⚠️ **提醒**：您的資金高度集中在 **{max_stock}** ({max_pct:.1f}%)。若該股波動較大，將顯著影響總資產水位。")
         else:
-            st.info(f"✅ **小鐵點評**：資產配置比例健康。目前以 **{max_stock}** 為核心持股。")
+            st.info(f"✅ **點評**：資產配置比例健康。目前以 **{max_stock}** 為核心持股。")
 
 # ==============================================================================
 # Tab 2: 個股深度分析 (移入 Tab 且更新 UI)
@@ -949,39 +833,31 @@ with tab_analysis:
             try:
                 df_chip = fetch_chip_data_cached(ticker_input)
 
+                # ✅ 防呆：確保有資料
                 if df_chip is not None and not df_chip.empty:
 
+                    # ✅ 修正1：確保 date 是 datetime
                     df_chip['date'] = pd.to_datetime(df_chip['date'], errors='coerce')
 
+                    # ✅ 修正2：抓「最新有效交易日」（不是最後一列）
                     last_day = df_chip['date'].dropna().max()
 
-                    # ✅ 修正1：日期比對問題（最重要）
-                    day_data = df_chip[df_chip['date'].dt.date == last_day.date()]
+                    day_data = df_chip[df_chip['date'] == last_day]
 
-                    # ✅ 修正2：避免假資料（空）
-                    if day_data.empty:
-                        st.warning("⚠️ 最新交易日尚無法人資料（通常是今天尚未更新）")
-                        st.stop()
+                    # ✅ 修正3：名稱統一（避免抓不到）
+                    f_net = (day_data[day_data['name'].str.contains('Foreign', case=False, na=False)]['buy'].sum()
+                             - day_data[day_data['name'].str.contains('Foreign', case=False, na=False)]['sell'].sum()) / 1000
 
-                    # ===== 法人計算 =====
-                    f_net = (
-                        day_data[day_data['name'].str.contains('Foreign', case=False, na=False)]['buy'].sum()
-                        - day_data[day_data['name'].str.contains('Foreign', case=False, na=False)]['sell'].sum()
-                    ) / 1000
+                    d_net = (day_data[day_data['name'].str.contains('Investment_Trust', case=False, na=False)]['buy'].sum()
+                             - day_data[day_data['name'].str.contains('Investment_Trust', case=False, na=False)]['sell'].sum()) / 1000
 
-                    d_net = (
-                        day_data[day_data['name'].str.contains('Investment_Trust', case=False, na=False)]['buy'].sum()
-                        - day_data[day_data['name'].str.contains('Investment_Trust', case=False, na=False)]['sell'].sum()
-                    ) / 1000
-
-                    s_net = (
-                        day_data[day_data['name'].str.contains('Dealer', case=False, na=False)]['buy'].sum()
-                        - day_data[day_data['name'].str.contains('Dealer', case=False, na=False)]['sell'].sum()
-                    ) / 1000
+                    s_net = (day_data[day_data['name'].str.contains('Dealer', case=False, na=False)]['buy'].sum()
+                             - day_data[day_data['name'].str.contains('Dealer', case=False, na=False)]['sell'].sum()) / 1000
 
                     st.markdown('<div class="section-title">👥 法人動向</div>', unsafe_allow_html=True)
-                    c1, c2, c3 = st.columns(3)
+                    c1,c2,c3 = st.columns(3)
 
+                    # ✅ 修正4：數值顯示 + 顏色
                     for c,l,v in zip([c1,c2,c3],["外資","投信","自營商"],[f_net,d_net,s_net]):
                         cls = "up" if v>0 else "down"
                         c.markdown(f"""
@@ -992,9 +868,8 @@ with tab_analysis:
                         """, unsafe_allow_html=True)
 
                     st.caption(f"更新：{last_day.date()}")
-
                     # =============================
-                    # 🔥 主力行為分析
+                    # 🔥 主力行為分析（NEW）
                     # =============================
                     chip_analysis = analyze_chip_trend(df_chip)
 
@@ -1020,7 +895,7 @@ with tab_analysis:
                             col.markdown(f"""
                             <div class="card">
                                 <div class="metric-title">{title}</div>
-                                <div style="color:{color}; font-size:20px; font-weight:bold;">
+                                    <div style="color:{color}; font-size:20px; font-weight:bold;">
                                     {status}
                                 </div>
                                 <div style="font-size:12px; color:gray;">
@@ -1034,7 +909,7 @@ with tab_analysis:
                         render_chip_card(c3, "自營商", chip_analysis["自營商連續買"], chip_analysis["自營商趨勢"])
 
                 else:
-                    st.warning("⚠️ 無法人資料（API或快取問題）")
+                    st.warning("⚠️ 無法人資料（可能尚未更新）")
 
             except Exception as e:
                 st.error(f"籌碼抓取失敗: {e}")
@@ -1042,7 +917,7 @@ with tab_analysis:
             # =============================
             # 📈 法人趨勢
             # =============================
-            if df_chip is not None and not df_chip.empty:
+            if not df_chip.empty:
                 df_chip['net'] = (df_chip['buy'] - df_chip['sell']) / 1000
                 df_trend = df_chip.pivot_table(index='date', columns='name', values='net', aggfunc='sum').fillna(0)
 
