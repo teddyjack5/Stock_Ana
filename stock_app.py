@@ -68,21 +68,16 @@ st.markdown("""
 @st.cache_data(ttl=300)
 def fetch_yf_data_cached(ticker, period="5d", interval="1d"):
 
-    # 🧨 強制安全轉型
-    try:
-        ticker = str(ticker).strip().upper()
-    except:
-        return None
+    ticker = str(ticker).strip().upper()
 
-    # 🧨 防 None
     if not ticker or ticker == "NONE":
         return None
 
     try:
         df = yf.download(
             tickers=ticker,
-            period=period if period else "5d",
-            interval=interval if interval else "1d",
+            period=period or "5d",
+            interval=interval or "1d",
             progress=False,
             threads=False,
             auto_adjust=False
@@ -97,7 +92,8 @@ def fetch_yf_data_cached(ticker, period="5d", interval="1d"):
         return df
 
     except Exception as e:
-        print("YF ERROR:", ticker, e)
+        # 🔥 不要 silent fail
+        st.error(f"YF ERROR {ticker}: {e}")
         return None
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -238,7 +234,7 @@ def show_full_portfolio_report(active_costs, active_list):
         return
 
     report_data = []
-
+    st.write("DEBUG active_costs keys:", list(active_costs.keys())[:10])
     with st.spinner("正在獲取最新報價..."):
         for t_code, info in active_costs.items():
             t_code = str(t_code).strip()
@@ -248,10 +244,17 @@ def show_full_portfolio_report(active_costs, active_list):
                 t_code_yf = t_code
             try:
                 df_recent = fetch_yf_data_cached(t_code_yf, period="5d", interval="1d")
-                if df_recent is None or df_recent.empty:
+                if df_recent is None:
+                    st.warning(f"❌ 無資料: {t_code_yf}")
                     continue
-                if 'Close' not in df_recent:
-                    print("no Close:", t_code_yf)
+
+                if df_recent.empty:
+                    st.warning(f"⚠️ 空資料: {t_code_yf}")
+                    continue
+
+                if "Close" not in df_recent.columns:
+                    st.warning(f"❌ 沒 Close 欄位: {t_code_yf}")
+                    continueo Close:", t_code_yf)
                     continue
                 c_price = df_recent['Close'].iloc[-1]
                 name = active_list.get(t_code, "未知")
@@ -724,7 +727,7 @@ with tab_portfolio:
         p_color = "#FFFFFF" # 白色
         prefix = ""
     
-    st.write("DEBUG:", ticker_input, type(ticker_input))
+    
     st.write("### ☁️ 小鐵的雲端投資組合")
     col_summary, col_chart = st.columns([3.5, 6.5])
 
