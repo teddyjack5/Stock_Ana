@@ -953,7 +953,7 @@ with tab_analysis:
             # =============================
             # 📈 法人趨勢
             # =============================
-            if not df_chip.empty:
+            if df_chip is not None and not df_chip.empty:
                 df_chip['net'] = (df_chip['buy'] - df_chip['sell']) / 1000
                 df_trend = df_chip.pivot_table(index='date', columns='name', values='net', aggfunc='sum').fillna(0)
 
