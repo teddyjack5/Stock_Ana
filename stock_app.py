@@ -193,66 +193,84 @@ def show_full_portfolio_report(active_costs, active_list):
     with st.spinner("正在獲取最新報價..."):
         for t_code, info in active_costs.items():
             try:
-                # 使用快取取代原本的 yf.Ticker
+                # 取得股價資料
                 df_recent = fetch_yf_data_cached(t_code, period="1d", interval="1d")
-                if df_recent.empty: continue
+                if df_recent.empty:
+                    continue
                 
-                c_price = df_recent['Close'].iloc[-1]
+                # 處理 yfinance 多層索引問題
+                if isinstance(df_recent.columns, pd.MultiIndex):
+                    df_recent.columns = df_recent.columns.get_level_values(0)
+                
+                c_price = float(df_recent['Close'].iloc[-1])
                 name = active_list.get(t_code, "未知")
-                cost = float(info['cost']) if isinstance(info, dict) else float(info)
-                qty = float(info['qty']) if isinstance(info, dict) else 0.0
                 
+                # 讀取成本與張數 (支援 dict 或直接數值型態)
+                if isinstance(info, dict):
+                    cost = float(info.get('cost', 0))
+                    qty = float(info.get('qty', 0))
+                else:
+                    cost = float(info)
+                    qty = 0.0
+                
+                if qty <= 0: continue # 跳過張數為 0 的股票
+
                 total_cost = cost * qty * 1000
                 market_value = c_price * qty * 1000
                 diff = market_value - total_cost
                 roi = (diff / total_cost * 100) if total_cost > 0 else 0
                 
                 report_data.append({
-                    "代號": t_code, "名稱": name, "成本價": f"{cost:.2f}",
-                    "現價": f"{c_price:.2f}", "張數": qty,
-                    "投入本金": int(total_cost), "目前市值": int(market_value),
-                    "損益": int(diff), "報酬率": f"{roi:.2f}%"
+                    "代號": t_code,
+                    "名稱": name,
+                    "成本價": round(cost, 2),
+                    "現價": round(c_price, 2),
+                    "張數": qty,
+                    "投入本金": int(total_cost),
+                    "目前市值": int(market_value),
+                    "損益": int(diff),
+                    "報酬率": round(roi, 2)
                 })
-            except: continue
+            except Exception as e:
+                # 可以選擇列印錯誤以便除錯: print(f"Error processing {t_code}: {e}")
+                continue
 
-    if report_data:
-        df_report = pd.DataFrame(report_data)
-        # 確保數值型態正確
-        df_report['報酬率'] = pd.to_numeric(df_report['報酬率'].astype(str).str.replace('%', ''), errors='coerce')
-        df_report['損益'] = pd.to_numeric(df_report['損益'], errors='coerce')
-        df_report = df_report.sort_values(by='報酬率', ascending=False)
+    if not report_data:
+        st.info("尚無有效庫存資料可顯示。")
+        return
 
-        # 定義樣式函數 (維持你的 logic)
-        def color_pnl_custom(v):
-            try:
-                val = float(v)
-                if val > 0: return 'color: #FF4B4B' # 紅色
-                if val < 0: return 'color: #26A69A' # 波斯綠
-            except:
-                pass
-            return 'color: white'
+    # 轉為 DataFrame
+    df_report = pd.DataFrame(report_data)
+    df_report = df_report.sort_values(by='報酬率', ascending=False)
 
-        # 使用 df_report.style 而不是 df_report
-        styled_df = df_report.style.map(color_pnl_custom, subset=['損益', '報酬率'])
+    # 樣式定義
+    def color_pnl(val):
+        try:
+            if val > 0: return 'color: #FF4B4B'
+            if val < 0: return 'color: #26A69A'
+        except: pass
+        return 'color: white'
 
-        st.dataframe(
-            styled_df,  # 傳入帶有樣式的物件
-            column_config={
-                "報酬率": st.column_config.NumberColumn("報酬率", format="%.2f%%"),
-                "成本價": st.column_config.NumberColumn("成本價", format="%.2f"),
-                "現價": st.column_config.NumberColumn("現價", format="%.2f"),
-                "投入本金": st.column_config.NumberColumn("投入本金", format="d"),
-                "目前市值": st.column_config.NumberColumn("目前市值", format="d"),
-                "損益": st.column_config.NumberColumn("損益", format="d"),
-            },
-            use_container_width=True, 
-            hide_index=True
-        )
-        
-        # 計算合計
-        total_p = df_report['損益'].sum()
-        st.divider()
-        st.metric("合計預估總損益", f"NT$ {int(total_p):,}", delta=f"{int(total_p):,}")
+    # 建立樣式物件
+    styled_df = df_report.style.map(color_pnl, subset=['損益', '報酬率'])
+
+    # 顯示表格
+    st.dataframe(
+        styled_df,
+        column_config={
+            "報酬率": st.column_config.NumberColumn("報酬率 (%)", format="%.2f%%"),
+            "投入本金": st.column_config.NumberColumn("投入本金", format="¥%d"), # 使用千分位
+            "目前市值": st.column_config.NumberColumn("目前市值", format="¥%d"),
+            "損益": st.column_config.NumberColumn("損益", format="¥%d"),
+        },
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    # 合計數值
+    total_p = df_report['損益'].sum()
+    st.divider()
+    st.metric("合計預估總損益", f"NT$ {int(total_p):,}", delta=f"{int(total_p):,}")
 
 # 2. 新增庫存股票
 @st.dialog("➕ 新增股票至清單")
