@@ -217,33 +217,42 @@ def show_full_portfolio_report(active_costs, active_list):
 
     if report_data:
         df_report = pd.DataFrame(report_data)
+        # 確保數值型態正確
         df_report['報酬率'] = pd.to_numeric(df_report['報酬率'].astype(str).str.replace('%', ''), errors='coerce')
+        df_report['損益'] = pd.to_numeric(df_report['損益'], errors='coerce')
         df_report = df_report.sort_values(by='報酬率', ascending=False)
 
-    def color_pnl_custom(v):
-        try:
-            val = float(v)
-            if val > 0: return 'color: #FF4B4B' # 紅色
-            if val < 0: return 'color: #26A69A' # 【UI優化】改用波斯綠
-        except (ValueError, TypeError):
-            pass
-        return 'color: white'
+        # 定義樣式函數 (維持你的 logic)
+        def color_pnl_custom(v):
+            try:
+                val = float(v)
+                if val > 0: return 'color: #FF4B4B' # 紅色
+                if val < 0: return 'color: #26A69A' # 波斯綠
+            except:
+                pass
+            return 'color: white'
+
+        # 使用 df_report.style 而不是 df_report
+        styled_df = df_report.style.map(color_pnl_custom, subset=['損益', '報酬率'])
+
+        st.dataframe(
+            styled_df,  # 傳入帶有樣式的物件
+            column_config={
+                "報酬率": st.column_config.NumberColumn("報酬率", format="%.2f%%"),
+                "成本價": st.column_config.NumberColumn("成本價", format="%.2f"),
+                "現價": st.column_config.NumberColumn("現價", format="%.2f"),
+                "投入本金": st.column_config.NumberColumn("投入本金", format="d"),
+                "目前市值": st.column_config.NumberColumn("目前市值", format="d"),
+                "損益": st.column_config.NumberColumn("損益", format="d"),
+            },
+            use_container_width=True, 
+            hide_index=True
+        )
         
-    st.dataframe(
-        df_report.map(color_pnl_custom, subset=['損益', '報酬率']), 
-        column_config={
-            "報酬率": st.column_config.NumberColumn(format="%.2f%%"), # 自動補上 % 顯示
-            "成本價": st.column_config.NumberColumn(format="%.2f"),
-            "現價": st.column_config.NumberColumn(format="%.2f"),
-        },
-        use_container_width=True, 
-        hide_index=True
-    )
-    
-    # 計算合計時也要防呆，避免字串相加
-    total_p = sum(pd.to_numeric(df_report['損益'], errors='coerce').fillna(0))
-    st.divider()
-    st.metric("合計預估總損益", f"NT$ {int(total_p):,}", delta=f"{int(total_p):,}")
+        # 計算合計
+        total_p = df_report['損益'].sum()
+        st.divider()
+        st.metric("合計預估總損益", f"NT$ {int(total_p):,}", delta=f"{int(total_p):,}")
 
 # 2. 新增庫存股票
 @st.dialog("➕ 新增股票至清單")
