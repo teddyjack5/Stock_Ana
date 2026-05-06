@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from FinMind.data import DataLoader
 from plotly.subplots import make_subplots
 from streamlit_gsheets import GSheetsConnection
+from streamlit_echarts import st_echarts
 from bs4 import BeautifulSoup
 
 # ==============================================================================
@@ -672,38 +673,50 @@ with tab_portfolio:
 
     with col_chart:
         if processed_data:
-            labels = [d['label'] for d in processed_data]
-            values = [d['value'] for d in processed_data]
+            # 1. 格式化資料為 ECharts 格式
+            chart_data = [{"value": d['value'], "name": d['label']} for d in processed_data]
         
-            # 找出最大份額的索引，將其「拉出 (Pull)」來增加層次感
-            max_idx = values.index(max(values))
-            pull_list = [0.1 if i == max_idx else 0 for i in range(len(values))]
+            # 2. 設定 ECharts 配置項 (南丁格爾玫瑰圖樣式)
+            options = {
+                "backgroundColor": "rgba(0,0,0,0)", # 透明背景，完美契合你的深色 UI
+                "tooltip": {
+                    "trigger": "item", 
+                    "formatter": "{b}: {c} ({d}%)",
+                    "backgroundColor": "#2a2e39",
+                    "textStyle": {"color": "#fff"}
+                },
+                "legend": {
+                    "orient": "horizontal",
+                    "bottom": "0",
+                    "textStyle": {"color": "#d1d4dc"}
+                },
+                "series": [
+                    {
+                        "name": "資產配置",
+                        "type": "pie",
+                        "radius": ["15%", "75%"], # 內外半徑，創造層次感
+                        "center": ["50%", "45%"],
+                        "roseType": "area", # 關鍵：南丁格爾玫瑰模式，數值越大半徑越長
+                        "itemStyle": {
+                            "borderRadius": 12, # 圓角
+                            "shadowBlur": 20,   # 陰影，營造 2.5D 立體感
+                            "shadowColor": "rgba(0, 0, 0, 0.5)"
+                        },
+                        "data": chart_data,
+                        "label": {
+                            "show": True,
+                            "color": "#fff",
+                            "formatter": "{b}\n{d}%",
+                            "fontSize": 14
+                        },
+                        # 使用與你原本一致的專業配色
+                        "color": ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692']
+                    }
+                ]
+            }
         
-            # 使用更專業的配色方案
-            fig_pie = go.Figure(data=[go.Pie(
-                labels=labels, 
-                values=values, 
-                hole=.45,
-                pull=pull_list, # 分離效果
-                textinfo='label+percent', 
-                textfont=dict(size=14, color="white"),
-                marker=dict(
-                    colors=['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692'],
-                    line=dict(color='#1e1e1e', width=2)
-                ),
-                hoverinfo="label+value+percent"
-            )])
-        
-            fig_pie.update_layout(
-                showlegend=True, 
-                legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5, font=dict(color="white")),
-                template="plotly_dark",
-                margin=dict(t=20, b=50, l=10, r=10),
-                height=400,
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
+            # 3. 渲染圖表
+            st_echarts(options=options, height="450px")
             
     # 顯示下方的智慧點評 (跨欄顯示)
     if 'values' in locals() and values:
