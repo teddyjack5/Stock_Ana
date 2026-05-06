@@ -643,67 +643,67 @@ with tab_portfolio:
     col_summary, col_chart = st.columns([3.5, 6.5])
 
     with col_summary:
-    st.markdown(f"""
-        <div style="
-            background-color: #1e1e1e; 
-            padding: 25px; 
-            border-radius: 20px; 
-            border-left: 12px solid {p_color}; 
-            height: 380px; 
-            display: flex; 
-            flex-direction: column; 
-            justify-content: space-between;
-            box-shadow: 5px 5px 15px rgba(0,0,0,0.3);
-        ">
-            <div>
-                <p style="color: #888; margin: 0; font-size: 14px; font-weight: bold;">資產總市值</p>
-                <h2 style="color: white; margin: 0; font-size: 28px; font-family: 'Courier New';">NT$ {int(total_value):,}</h2>
+        st.markdown(f"""
+            <div style="
+                background-color: #1e1e1e; 
+                padding: 25px; 
+                border-radius: 20px; 
+                border-left: 12px solid {p_color}; 
+                height: 380px; 
+                display: flex; 
+                flex-direction: column; 
+                justify-content: space-between;
+                box-shadow: 5px 5px 15px rgba(0,0,0,0.3);
+            ">
+                <div>
+                    <p style="color: #888; margin: 0; font-size: 14px; font-weight: bold;">資產總市值</p>
+                    <h2 style="color: white; margin: 0; font-size: 28px; font-family: 'Courier New';">NT$ {int(total_value):,}</h2>
+                </div>
+                <div style="border-top: 1px solid #333; border-bottom: 1px solid #333; padding: 20px 0;">
+                    <p style="color: #888; margin: 0; font-size: 14px; font-weight: bold;">預估總損益</p>
+                    <h1 style="color: {p_color}; margin: 0; font-size: 38px; font-weight: 800;">{prefix}{int(profit):,}</h1>
+                </div>
+                <div>
+                    <p style="color: #888; margin: 0; font-size: 14px; font-weight: bold;">總報酬率</p>
+                    <h2 style="color: {p_color}; margin: 0; font-size: 28px; font-weight: bold;">{prefix}{roi:.2f}%</h2>
+                </div>
             </div>
-            <div style="border-top: 1px solid #333; border-bottom: 1px solid #333; padding: 20px 0;">
-                <p style="color: #888; margin: 0; font-size: 14px; font-weight: bold;">預估總損益</p>
-                <h1 style="color: {p_color}; margin: 0; font-size: 38px; font-weight: 800;">{prefix}{int(profit):,}</h1>
-            </div>
-            <div>
-                <p style="color: #888; margin: 0; font-size: 14px; font-weight: bold;">總報酬率</p>
-                <h2 style="color: {p_color}; margin: 0; font-size: 28px; font-weight: bold;">{prefix}{roi:.2f}%</h2>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
     with col_chart:
-    if processed_data:
-        labels = [d['label'] for d in processed_data]
-        values = [d['value'] for d in processed_data]
+        if processed_data:
+            labels = [d['label'] for d in processed_data]
+            values = [d['value'] for d in processed_data]
         
-        # 找出最大份額的索引，將其「拉出 (Pull)」來增加層次感
-        max_idx = values.index(max(values))
-        pull_list = [0.1 if i == max_idx else 0 for i in range(len(values))]
+            # 找出最大份額的索引，將其「拉出 (Pull)」來增加層次感
+            max_idx = values.index(max(values))
+            pull_list = [0.1 if i == max_idx else 0 for i in range(len(values))]
         
-        # 使用更專業的配色方案
-        fig_pie = go.Figure(data=[go.Pie(
-            labels=labels, 
-            values=values, 
-            hole=.45,
-            pull=pull_list, # 分離效果
-            textinfo='label+percent', 
-            textfont=dict(size=14, color="white"),
-            marker=dict(
-                colors=['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692'],
-                line=dict(color='#1e1e1e', width=2)
-            ),
-            hoverinfo="label+value+percent"
-        )])
+            # 使用更專業的配色方案
+            fig_pie = go.Figure(data=[go.Pie(
+                labels=labels, 
+                values=values, 
+                hole=.45,
+                pull=pull_list, # 分離效果
+                textinfo='label+percent', 
+                textfont=dict(size=14, color="white"),
+                marker=dict(
+                    colors=['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692'],
+                    line=dict(color='#1e1e1e', width=2)
+                ),
+                hoverinfo="label+value+percent"
+            )])
         
-        fig_pie.update_layout(
-            showlegend=True, 
-            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5, font=dict(color="white")),
-            template="plotly_dark",
-            margin=dict(t=20, b=50, l=10, r=10),
-            height=400,
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-        )
-        st.plotly_chart(fig_pie, use_container_width=True)
+            fig_pie.update_layout(
+                showlegend=True, 
+                legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5, font=dict(color="white")),
+                template="plotly_dark",
+                margin=dict(t=20, b=50, l=10, r=10),
+                height=400,
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
             
     # 顯示下方的智慧點評 (跨欄顯示)
     if 'values' in locals() and values:
