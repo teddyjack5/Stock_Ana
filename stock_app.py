@@ -87,12 +87,12 @@ def fetch_chip_data_cached(stock_id):
 
         # ✅ 關鍵修正1：避免 cache 空資料
         if df is None or df.empty:
-            return None
+            raise ValueError("No data fetched")
 
         # ✅ 關鍵修正2：確保欄位存在（防 API 變動）
         required_cols = {"date", "name", "buy", "sell"}
         if not required_cols.issubset(df.columns):
-            return None
+            raise ValueError("Missing columns")
 
         return df
 
