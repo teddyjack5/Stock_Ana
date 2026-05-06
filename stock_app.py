@@ -203,20 +203,23 @@ def hash_password(password):
 # 1. 顯示全帳戶損益明細
 @st.dialog("📋 全帳戶個股損益明細", width="large")
 def show_full_portfolio_report(active_costs, active_list):
+
     if not active_costs:
         st.warning("目前庫存中沒有帳務資料。")
         return
 
     report_data = []
+
     with st.spinner("正在獲取最新報價..."):
         for t_code, info in active_costs.items():
             try:
-                # 使用快取取代原本的 yf.Ticker
                 df_recent = fetch_yf_data_cached(t_code, period="1d", interval="1d")
-                if df_recent.empty: continue
+                if df_recent is None or df_recent.empty:
+                    continue
                 
                 c_price = df_recent['Close'].iloc[-1]
                 name = active_list.get(t_code, "未知")
+
                 cost = float(info['cost']) if isinstance(info, dict) else float(info)
                 qty = float(info['qty']) if isinstance(info, dict) else 0.0
                 
@@ -224,44 +227,73 @@ def show_full_portfolio_report(active_costs, active_list):
                 market_value = c_price * qty * 1000
                 diff = market_value - total_cost
                 roi = (diff / total_cost * 100) if total_cost > 0 else 0
-                
+
                 report_data.append({
-                    "代號": t_code, "名稱": name, "成本價": f"{cost:.2f}",
-                    "現價": f"{c_price:.2f}", "張數": qty,
-                    "投入本金": int(total_cost), "目前市值": int(market_value),
-                    "損益": int(diff), "報酬率": f"{roi:.2f}%"
+                    "代號": t_code,
+                    "名稱": name,
+                    "成本價": cost,
+                    "現價": c_price,
+                    "張數": qty,
+                    "投入本金": int(total_cost),
+                    "目前市值": int(market_value),
+                    "損益": int(diff),
+                    "報酬率": roi   # ✅ 保持數值
                 })
-            except: continue
 
-    if report_data:
-        df_report = pd.DataFrame(report_data)
-        df_report['報酬率'] = pd.to_numeric(df_report['報酬率'].astype(str).str.replace('%', ''), errors='coerce')
-        df_report = df_report.sort_values(by='報酬率', ascending=False)
+            except Exception as e:
+                print("error:", t_code, e)
+                continue
 
-    def color_pnl_custom(v):
+    # ❗ 防呆（重要）
+    if not report_data:
+        st.warning("⚠️ 無法取得任何報價資料")
+        return
+
+    df_report = pd.DataFrame(report_data)
+
+    # 排序
+    df_report = df_report.sort_values(by='報酬率', ascending=False)
+
+    # =============================
+    # 🎨 顏色函數
+    # =============================
+    def color_pnl_custom(val):
         try:
-            val = float(v)
-            if val > 0: return 'color: #FF4B4B' # 紅色
-            if val < 0: return 'color: #26A69A' # 【UI優化】改用波斯綠
-        except (ValueError, TypeError):
-            pass
-        return 'color: white'
-        
+            val = float(val)
+        except:
+            return ""
+
+        if val > 0:
+            return "color: #EF5350; font-weight:600;"
+        elif val < 0:
+            return "color: #26A69A; font-weight:600;"
+        return ""
+
+    # =============================
+    # 📊 顯示
+    # =============================
     st.dataframe(
-        df_report.style.map(color_pnl_custom, subset=['損益', '報酬率']), 
+        df_report.style.applymap(color_pnl_custom, subset=['損益', '報酬率']),
         column_config={
-            "報酬率": st.column_config.NumberColumn(format="%.2f%%"), # 自動補上 % 顯示
+            "報酬率": st.column_config.NumberColumn(format="%.2f%%"),
             "成本價": st.column_config.NumberColumn(format="%.2f"),
             "現價": st.column_config.NumberColumn(format="%.2f"),
         },
-        use_container_width=True, 
+        use_container_width=True,
         hide_index=True
     )
-    
-    # 計算合計時也要防呆，避免字串相加
-    total_p = sum(pd.to_numeric(df_report['損益'], errors='coerce').fillna(0))
+
+    # =============================
+    # 📈 合計
+    # =============================
+    total_p = df_report['損益'].sum()
+
     st.divider()
-    st.metric("合計預估總損益", f"NT$ {int(total_p):,}", delta=f"{int(total_p):,}")
+    st.metric(
+        "合計預估總損益",
+        f"NT$ {int(total_p):,}",
+        delta=f"{int(total_p):,}"
+    )
 
 # 2. 新增庫存股票
 @st.dialog("➕ 新增股票至清單")
