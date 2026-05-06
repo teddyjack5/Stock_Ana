@@ -66,16 +66,26 @@ st.markdown("""
 # 【新增效能優化】 - 集中式快取管理 (解決介面卡頓)
 # ==============================================================================
 @st.cache_data(ttl=300)
-def fetch_yf_data_cached(ticker):
-    ticker = str(ticker).strip().upper()
+def fetch_yf_data_cached(ticker, period="5d", interval="1d"):
+
+    # 🧨 強制安全轉型
+    try:
+        ticker = str(ticker).strip().upper()
+    except:
+        return None
+
+    # 🧨 防 None
+    if not ticker or ticker == "NONE":
+        return None
 
     try:
         df = yf.download(
-            ticker,
-            period="5d",
-            interval="1d",
+            tickers=ticker,
+            period=period if period else "5d",
+            interval=interval if interval else "1d",
             progress=False,
-            threads=False
+            threads=False,
+            auto_adjust=False
         )
 
         if df is None or df.empty:
@@ -84,13 +94,10 @@ def fetch_yf_data_cached(ticker):
         if "Close" not in df.columns:
             return None
 
-        if df["Close"].dropna().empty:
-            return None
-
         return df
 
     except Exception as e:
-        print("yf error:", ticker, e)
+        print("YF ERROR:", ticker, e)
         return None
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -717,7 +724,7 @@ with tab_portfolio:
         p_color = "#FFFFFF" # 白色
         prefix = ""
     
-
+    st.write(ticker_input, type(ticker_input))
     st.write("### ☁️ 小鐵的雲端投資組合")
     col_summary, col_chart = st.columns([3.5, 6.5])
 
