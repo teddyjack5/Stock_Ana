@@ -82,7 +82,7 @@ def fetch_chip_data_cached(stock_id):
 
         df = dl_cache.taiwan_stock_institutional_investors(
             stock_id=stock_id.split('.')[0],
-            start_date=(datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
+            start_date=(datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
         )
 
         # ✅ 關鍵修正1：避免 cache 空資料
