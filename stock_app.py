@@ -869,31 +869,39 @@ with tab_analysis:
             try:
                 df_chip = fetch_chip_data_cached(ticker_input)
 
-                # ✅ 防呆：確保有資料
                 if df_chip is not None and not df_chip.empty:
 
-                    # ✅ 修正1：確保 date 是 datetime
                     df_chip['date'] = pd.to_datetime(df_chip['date'], errors='coerce')
 
-                    # ✅ 修正2：抓「最新有效交易日」（不是最後一列）
                     last_day = df_chip['date'].dropna().max()
 
-                    day_data = df_chip[df_chip['date'] == last_day]
+                    # ✅ 修正1：日期比對問題（最重要）
+                    day_data = df_chip[df_chip['date'].dt.date == last_day.date()]
 
-                    # ✅ 修正3：名稱統一（避免抓不到）
-                    f_net = (day_data[day_data['name'].str.contains('Foreign', case=False, na=False)]['buy'].sum()
-                             - day_data[day_data['name'].str.contains('Foreign', case=False, na=False)]['sell'].sum()) / 1000
+                    # ✅ 修正2：避免假資料（空）
+                    if day_data.empty:
+                        st.warning("⚠️ 最新交易日尚無法人資料（通常是今天尚未更新）")
+                        st.stop()
 
-                    d_net = (day_data[day_data['name'].str.contains('Investment_Trust', case=False, na=False)]['buy'].sum()
-                             - day_data[day_data['name'].str.contains('Investment_Trust', case=False, na=False)]['sell'].sum()) / 1000
+                    # ===== 法人計算 =====
+                    f_net = (
+                        day_data[day_data['name'].str.contains('Foreign', case=False, na=False)]['buy'].sum()
+                        - day_data[day_data['name'].str.contains('Foreign', case=False, na=False)]['sell'].sum()
+                    ) / 1000
 
-                    s_net = (day_data[day_data['name'].str.contains('Dealer', case=False, na=False)]['buy'].sum()
-                             - day_data[day_data['name'].str.contains('Dealer', case=False, na=False)]['sell'].sum()) / 1000
+                    d_net = (
+                        day_data[day_data['name'].str.contains('Investment_Trust', case=False, na=False)]['buy'].sum()
+                        - day_data[day_data['name'].str.contains('Investment_Trust', case=False, na=False)]['sell'].sum()
+                    ) / 1000
+
+                    s_net = (
+                        day_data[day_data['name'].str.contains('Dealer', case=False, na=False)]['buy'].sum()
+                        - day_data[day_data['name'].str.contains('Dealer', case=False, na=False)]['sell'].sum()
+                    ) / 1000
 
                     st.markdown('<div class="section-title">👥 法人動向</div>', unsafe_allow_html=True)
-                    c1,c2,c3 = st.columns(3)
+                    c1, c2, c3 = st.columns(3)
 
-                    # ✅ 修正4：數值顯示 + 顏色
                     for c,l,v in zip([c1,c2,c3],["外資","投信","自營商"],[f_net,d_net,s_net]):
                         cls = "up" if v>0 else "down"
                         c.markdown(f"""
@@ -904,8 +912,9 @@ with tab_analysis:
                         """, unsafe_allow_html=True)
 
                     st.caption(f"更新：{last_day.date()}")
+
                     # =============================
-                    # 🔥 主力行為分析（NEW）
+                    # 🔥 主力行為分析
                     # =============================
                     chip_analysis = analyze_chip_trend(df_chip)
 
@@ -931,7 +940,7 @@ with tab_analysis:
                             col.markdown(f"""
                             <div class="card">
                                 <div class="metric-title">{title}</div>
-                                    <div style="color:{color}; font-size:20px; font-weight:bold;">
+                                <div style="color:{color}; font-size:20px; font-weight:bold;">
                                     {status}
                                 </div>
                                 <div style="font-size:12px; color:gray;">
@@ -945,7 +954,7 @@ with tab_analysis:
                         render_chip_card(c3, "自營商", chip_analysis["自營商連續買"], chip_analysis["自營商趨勢"])
 
                 else:
-                    st.warning("⚠️ 無法人資料（可能尚未更新）")
+                    st.warning("⚠️ 無法人資料（API或快取問題）")
 
             except Exception as e:
                 st.error(f"籌碼抓取失敗: {e}")
