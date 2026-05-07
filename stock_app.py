@@ -70,17 +70,32 @@ def fetch_yf_data_cached(ticker, period=None, interval=None, start=None):
         return yf.download(ticker, start=start, progress=False)
     return yf.download(ticker, period=period, interval=interval, progress=False)
 
-@st.cache_data(ttl=3600) # 法人籌碼一天只會更新一次，快取 1 小時
+@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_chip_data_cached(stock_id):
     dl_cache = DataLoader()
     try:
         if "FINMIND_TOKEN" in st.secrets:
             dl_cache.set_token(token=st.secrets["FINMIND_TOKEN"])
-        return dl_cache.taiwan_stock_institutional_investors(
+
+        df = dl_cache.taiwan_stock_institutional_investors(
             stock_id=stock_id.split('.')[0],
-            start_date=(datetime.now()-timedelta(days=10)).strftime('%Y-%m-%d')
+            start_date=(datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
         )
-    except:
+
+        if df is None or df.empty:
+            st.warning(f"⚠️ FinMind API 回傳 {stock_id} 的空資料")
+            return pd.DataFrame() # 回傳空 DataFrame 而不是 None
+
+        required_cols = {"date", "name", "buy", "sell"}
+        if not required_cols.issubset(df.columns):
+            st.warning(f"⚠️ FinMind 欄位有缺，目前欄位: {df.columns.tolist()}")
+            return pd.DataFrame()
+
+        return df
+
+    except Exception as e:
+        # 顯示在網頁上，不要用 print！因為 print 只會出現在後台終端機
+        st.error(f"❌ 籌碼 API 錯誤 ({stock_id}): {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600) # 新聞快取 1 小時
