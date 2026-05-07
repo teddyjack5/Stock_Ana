@@ -1337,29 +1337,22 @@ with tab_news:
             # =============================
             if not df_news.empty:
 
-                for _, row in df_news.head(10).iterrows():
-
-                    date_str = str(row["datetime"])[:16]
-                    title = row["title"]
-                    link = row["url"]
-                    source = row["source"]
+                for _, row in df_news.head(8).iterrows():
+                    date_str = str(row.get('date', ''))[:10]
+                    title = row.get('title', '無標題')
+                    summary = row.get('summary', '')
+                    link = row.get('link', '#')
 
                     st.markdown(f"""
                     <div style="
                         background:#131722;
                         border:1px solid #2A2E39;
-                        border-radius:12px;
-                        padding:14px;
+                        border-radius:10px;
+                        padding:12px;
                         margin-bottom:10px;
-                        transition:0.2s;
                     ">
-                        <div style="display:flex; justify-content:space-between;">
-                            <span style="color:#9BA3AF; font-size:12px;">
-                                {date_str}
-                            </span>
-                            <span style="color:#4FC3F7; font-size:12px;">
-                                {source}
-                            </span>
+                        <div style="color:#9BA3AF; font-size:12px;">
+                            {date_str}
                         </div>
 
                         <div style="
@@ -1372,11 +1365,20 @@ with tab_news:
                             {title}
                         </div>
 
+                        <div style="
+                            color:#9BA3AF;
+                            font-size:13px;
+                            margin-bottom:8px;
+                        ">
+                            {summary}
+                        </div>
+
                         <a href="{link}" target="_blank" style="
                             color:#26A69A;
                             font-size:13px;
+                            text-decoration:none;
                         ">
-                            查看全文 →
+                            🔗 查看全文
                         </a>
                     </div>
                     """, unsafe_allow_html=True)
