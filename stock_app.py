@@ -1343,45 +1343,43 @@ with tab_news:
                     summary = row.get('summary', '')
                     link = row.get('link', '#')
 
-                    st.markdown(f"""
-                    <div style="
-                        background:#131722;
-                        border:1px solid #2A2E39;
-                        border-radius:10px;
-                        padding:12px;
-                        margin-bottom:10px;
+                    st.markdown(f"""<div style="
+                    background:#131722;
+                    border:1px solid #2A2E39;
+                    border-radius:10px;
+                    padding:12px;
+                    margin-bottom:10px;
                     ">
-                        <div style="color:#9BA3AF; font-size:12px;">
-                            {date_str}
-                        </div>
-
-                        <div style="
-                            color:white;
-                            font-size:15px;
-                            margin-top:6px;
-                            margin-bottom:6px;
-                            font-weight:500;
-                        ">
-                            {title}
-                        </div>
-
-                        <div style="
-                            color:#9BA3AF;
-                            font-size:13px;
-                            margin-bottom:8px;
-                        ">
-                            {summary}
-                        </div>
-
-                        <a href="{link}" target="_blank" style="
-                            color:#26A69A;
-                            font-size:13px;
-                            text-decoration:none;
-                        ">
-                            🔗 查看全文
-                        </a>
+                    <div style="color:#9BA3AF; font-size:12px;">
+                    {date_str}
                     </div>
-                    """, unsafe_allow_html=True)
+
+                    <div style="
+                    color:white;
+                    font-size:15px;
+                    margin-top:6px;
+                    margin-bottom:6px;
+                    font-weight:500;
+                    ">
+                    {title}
+                    </div>
+
+                    <div style="
+                    color:#9BA3AF;
+                    font-size:13px;
+                    margin-bottom:8px;
+                    ">
+                    {summary}
+                    </div>
+
+                    <a href="{link}" target="_blank" style="
+                    color:#26A69A;
+                    font-size:13px;
+                    text-decoration:none;
+                    ">
+                    🔗 查看全文
+                    </a>
+                    </div>""", unsafe_allow_html=True)
 
             else:
                 st.warning("⚠️ 無新聞資料（已啟用雙來源仍為空，請檢查網路或 API）")
