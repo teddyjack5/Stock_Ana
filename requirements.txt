@@ -8,3 +8,4 @@ requests
 st-gsheets-connection
 pandas-datareader
 streamlit-echarts
+feedparser
