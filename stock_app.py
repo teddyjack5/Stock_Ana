@@ -126,41 +126,47 @@ def analyze_chip_trend(df_chip):
     if df_chip is None or df_chip.empty:
         return {}
 
-    df = df_chip.copy()
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    try:
+        df = df_chip.copy()
+        df['date'] = pd.to_datetime(df['date'])
+        # 計算單位改為「張」
+        df['net'] = (df['buy'] - df['sell']) / 1000
 
-    # 計算淨買賣
-    df['net'] = (df['buy'] - df['sell']) / 1000
+        # 分別篩選三大法人
+        f_df = df[df['name'].str.contains('Foreign', case=False, na=False)]
+        t_df = df[df['name'].str.contains('Investment_Trust', case=False, na=False)]
+        d_df = df[df['name'].str.contains('Dealer', case=False, na=False)]
 
-    # 分三大法人
-    foreign = df[df['name'].str.contains('Foreign', case=False, na=False)]
-    trust = df[df['name'].str.contains('Investment_Trust', case=False, na=False)]
-    dealer = df[df['name'].str.contains('Dealer', case=False, na=False)]
+        # 每日加總 (確保日期排序)
+        f_daily = f_df.groupby('date')['net'].sum().sort_index()
+        t_daily = t_df.groupby('date')['net'].sum().sort_index()
+        d_daily = d_df.groupby('date')['net'].sum().sort_index()
 
-    # 每日加總
-    f_daily = foreign.groupby('date')['net'].sum()
-    t_daily = trust.groupby('date')['net'].sum()
-    d_daily = dealer.groupby('date')['net'].sum()
+        # ✅ 安全的連買計算函數：改用 iloc[::-1] 確保不會發生 KeyError
+        def count_streak_safe(series):
+            if series.empty: return 0
+            streak = 0
+            # 只取最近 10 筆，並從最新往回推
+            recent_vals = series.tail(10).iloc[::-1] 
+            for val in recent_vals:
+                if val > 0:
+                    streak += 1
+                else:
+                    break
+            return streak
 
-    def count_streak(series):
-        streak = 0
-        for val in reversed(series.tail(10)):
-            if val > 0:
-                streak += 1
-            else:
-                break
-        return streak
-
-    result = {
-        "外資連續買": count_streak(f_daily),
-        "投信連續買": count_streak(t_daily),
-        "自營商連續買": count_streak(d_daily),
-        "外資趨勢": f_daily.tail(5).sum(),
-        "投信趨勢": t_daily.tail(5).sum(),
-        "自營商趨勢": d_daily.tail(5).sum()
-    }
-
-    return result
+        return {
+            "外資連續買": count_streak_safe(f_daily),
+            "投信連續買": count_streak_safe(t_daily),
+            "自營商連續買": count_streak_safe(d_daily),
+            "外資趨勢": float(f_daily.tail(5).sum()),
+            "投信趨勢": float(t_daily.tail(5).sum()),
+            "自營商趨勢": float(d_daily.tail(5).sum())
+        }
+    except Exception as e:
+        # 這裡會捕捉到到底是哪裡出錯
+        st.error(f"分析邏輯出錯: {e}")
+        return {}
 # ==============================================================================
 # 第一部分：【雲端基礎設施】 - 處理 Google Sheets 連線與資料存取
 # ==============================================================================
