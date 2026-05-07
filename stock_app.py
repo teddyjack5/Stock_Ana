@@ -657,7 +657,7 @@ with tab_portfolio:
     roi = (profit / total_cost * 100) if total_cost > 0 else 0
     p_color = "#FF4B4B" if profit > 0 else ("" if profit < 0 else "#FFFFFF")
 
-    st.write("### 🏢 小鐵的雲端投資組合")
+    st.write("### ☁️ 小鐵的雲端投資組合")
     col_summary, col_chart = st.columns([3.0, 7.0])
 
     with col_summary:
