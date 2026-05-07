@@ -657,80 +657,421 @@ with tab_portfolio:
     roi = (profit / total_cost * 100) if total_cost > 0 else 0
     p_color = "#FF4B4B" if profit > 0 else ("" if profit < 0 else "#FFFFFF")
 
-    st.write("### ☁️ 小鐵的雲端投資組合")
-    col_summary, col_chart = st.columns([3.0, 7.0])
+    # 顏色
+    if profit > 0:
+        p_color = "#00C897"
+    elif profit < 0:
+        p_color = "#FF4B6E"
+    else:
+        p_color = "#FFFFFF"
 
-    with col_summary:
-        st.markdown(f"""
+    # =============================
+    # 🎨 CSS 強化
+    # =============================
+    st.markdown("""
+    <style>
+
+    .glass-card {
+        background: linear-gradient(
+            145deg,
+            rgba(30,30,30,0.95),
+            rgba(18,18,18,0.92)
+        );
+
+        border: 1px solid rgba(255,255,255,0.06);
+
+        border-radius: 24px;
+
+        padding: 28px;
+
+        backdrop-filter: blur(14px);
+
+        box-shadow:
+            0 8px 32px rgba(0,0,0,0.35);
+
+        height: 100%;
+    }
+
+    .metric-label {
+        color: #8B949E;
+        font-size: 14px;
+        margin-bottom: 8px;
+        font-weight: 500;
+    }
+
+    .metric-main {
+        color: white;
+        font-size: 34px;
+        font-weight: 800;
+        letter-spacing: -1px;
+    }
+
+    .metric-profit {
+        font-size: 42px;
+        font-weight: 900;
+        letter-spacing: -1px;
+    }
+
+    .divider-line {
+        height: 1px;
+        background: rgba(255,255,255,0.08);
+        margin-top: 18px;
+        margin-bottom: 18px;
+    }
+
+    .ai-card {
+        background: linear-gradient(
+            135deg,
+            rgba(20,20,20,0.95),
+            rgba(30,30,30,0.92)
+        );
+
+        border-radius: 22px;
+
+        padding: 24px;
+
+        border: 1px solid rgba(255,255,255,0.06);
+
+        box-shadow:
+        0 8px 32px rgba(0,0,0,0.25);
+    
+        margin-top: 18px;
+    }
+
+    .ai-title {
+        font-size: 20px;
+        font-weight: 800;
+        color: white;
+        margin-bottom: 14px;
+    }
+
+    .ai-content {
+        color: #D1D5DB;
+        line-height: 1.9;
+        font-size: 15px;
+    }
+
+    .small-badge {
+        display: inline-block;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.08);
+        color: white;
+        font-size: 12px;
+        margin-bottom: 18px;
+    }
+
+    </style>
+    """, unsafe_allow_html=True)
+
+    # =============================
+    # 🏆 Title
+    # =============================
+    st.markdown("""
+    <div style="
+        display:flex;
+        align-items:center;
+        gap:12px;
+        margin-bottom:18px;
+    ">
+        <div style="
+            font-size:32px;
+        ">☁️</div>
+
+        <div>
             <div style="
-                background-color: #1e1e1e; padding: 20px; border-radius: 15px; 
-                border-left: 10px solid {p_color}; height: 350px; 
-                display: flex; flex-direction: column; justify-content: space-around;
+                font-size:30px;
+                font-weight:900;
+                color:white;
+                line-height:1.2;
             ">
-                <div>
-                    <p style="color: gray; margin: 0; font-size: 14px;">資產總市值</p>
-                    <h2 style="color: white; margin: 0; font-size: 24px;">NT$ {int(total_value):,}</h2>
-                </div>
-                <div style="border-top: 1px solid #444; border-bottom: 1px solid #444; padding: 15px 0;">
-                    <p style="color: gray; margin: 0; font-size: 14px;">預估總損益</p>
-                    <h1 style="color: {p_color}; margin: 0; font-size: 32px;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
-                </div>
-                <div>
-                    <p style="color: gray; margin: 0; font-size: 14px;">總報酬率</p>
-                    <h2 style="color: {p_color}; margin: 0; font-size: 24px;">{roi:.2f}%</h2>
-                </div>
+                小鐵的雲端投資組合
             </div>
+
+            <div style="
+                color:#8B949E;
+                font-size:14px;
+            ">
+                TradingView Style Portfolio Dashboard
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # =============================
+    # Main Layout
+    # =============================
+    col_summary, col_chart = st.columns([3.2, 6.8])
+
+    # =============================
+    # LEFT CARD
+    # =============================
+    with col_summary:
+
+        st.markdown(f"""
+        <div class="glass-card">
+
+            <div class="small-badge">
+                📊 Portfolio Overview
+            </div>
+
+            <div class="metric-label">
+                資產總市值
+            </div>
+
+            <div class="metric-main">
+                NT$ {int(total_value):,}
+            </div>
+
+            <div class="divider-line"></div>
+
+            <div class="metric-label">
+                預估總損益
+            </div>
+
+            <div class="metric-profit" style="color:{p_color};">
+                {"+" if profit > 0 else ""}
+                {int(profit):,}
+            </div>
+
+            <div class="divider-line"></div>
+
+            <div class="metric-label">
+                總報酬率
+            </div>
+
+            <div class="metric-main" style="color:{p_color};">
+                {roi:.2f}%
+            </div>
+
+        </div>
         """, unsafe_allow_html=True)
 
+    # =============================
+    # RIGHT CHART
+    # =============================
     with col_chart:
+
         if processed_data:
+
             labels = [d['label'] for d in processed_data]
             values = [d['value'] for d in processed_data]
-            
-            # 定義一組具備質感的現代配色
-            colors = ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692']
 
-            fig_pie = go.Figure(data=[go.Pie(
-                labels=labels, 
-                values=values, 
-                hole=.5, # 稍微調大中心洞口，增加通透感
-                textinfo='label+percent', 
-                textposition='outside', # 文字改到外面，避免遮擋立體感
-                pull=[0.05] * len(labels), # 關鍵：將每個區塊微幅抽離，創造立體空隙感
+            colors = [
+                "#5B8FF9",
+                "#61DDAA",
+                "#65789B",
+                "#F6BD16",
+                "#7262FD",
+                "#78D3F8",
+                "#9661BC",
+                "#F6903D",
+                "#008685",
+                "#F08BB4"
+            ]
+    
+            fig_pie = go.Figure()
+
+            fig_pie.add_trace(go.Pie(
+
+                labels=labels,
+                values=values,
+
+                hole=0.72,
+
+                sort=False,
+
+                textinfo='none',
+
+                pull=[0.02] * len(labels),
+
+                hovertemplate="""
+                <b>%{label}</b><br><br>
+                💰 市值: NT$ %{value:,.0f}<br>
+                📊 占比: %{percent}
+                <extra></extra>
+                """,
+
                 marker=dict(
                     colors=colors,
-                    # 加入深色線條增加區塊深度感
-                    line=dict(color='#111111', width=3) 
-                ),
-                hoverinfo="label+value+percent",
-                rotation=90 # 旋轉角度讓圖表看起來更平衡
-            )])
-            
+
+                    line=dict(
+                        color="rgba(255,255,255,0.08)",
+                        width=2
+                    )
+                )
+            ))
+
             fig_pie.update_layout(
-                showlegend=False, 
+
                 template="plotly_dark",
-                # 移除背景色，讓它與你的卡片融合
+
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(t=30, b=30, l=30, r=30),
-                height=400,
-                # 加入標註或陰影感
-                annotations=[dict(text='資產<br>配置', x=0.5, y=0.5, font_size=20, showarrow=False)]
+
+                height=460,
+
+                margin=dict(
+                    t=20,
+                    b=20,
+                    l=20,
+                    r=20
+                ),
+
+                showlegend=True,
+
+                legend=dict(
+
+                    orientation="v",
+
+                    yanchor="middle",
+                    y=0.5,
+
+                    xanchor="left",
+                    x=1.02,
+
+                    bgcolor="rgba(0,0,0,0)",
+
+                    font=dict(
+                        size=13,
+                        color="#DDDDDD"
+                    )
+                ),
+
+                annotations=[
+    
+                    dict(
+                        text=f"""
+                        <span style='font-size:14px;color:#888'>
+                        Portfolio
+                        </span>
+
+                        <br>
+
+                        <span style='font-size:28px;color:white'>
+                        NT$
+                        </span>
+
+                        <br>
+
+                        <span style='font-size:24px;color:{p_color}'>
+                        {int(total_value):,}
+                        </span>
+                        """,
+
+                        x=0.5,
+                        y=0.5,
+
+                        showarrow=False
+                    )
+                ]
             )
-            
-            st.plotly_chart(fig_pie, use_container_width=True)
-            
-    # 顯示下方的智慧點評 (跨欄顯示)
+
+            st.plotly_chart(
+                fig_pie,
+                use_container_width=True
+            )
+
+    # =============================
+    # 🤖 AI 投資分析
+    # =============================
     if 'values' in locals() and values:
+
         max_idx = values.index(max(values))
         max_stock = labels[max_idx]
         max_pct = (values[max_idx] / sum(values)) * 100
-        
-        if max_pct > 50:
-            st.warning(f"⚠️ **小鐵提醒**：您的資金高度集中在 **{max_stock}** ({max_pct:.1f}%)。若該股波動較大，將顯著影響總資產水位。")
-        else:
-            st.info(f"✅ **小鐵點評**：資產配置比例健康。目前以 **{max_stock}** 為核心持股。")
 
+        risk_level = ""
+
+        if max_pct >= 50:
+            risk_level = "高風險集中"
+            risk_color = "#FF4B6E"
+
+            comment = f"""
+            您的資金目前高度集中於
+            <b>{max_stock}</b>，
+            持股占比達
+            <b>{max_pct:.1f}%</b>。
+
+            <br><br>
+
+            若該標的出現較大波動，
+            將明顯影響整體資產淨值。
+
+            <br><br>
+
+            建議逐步增加不同產業配置，
+            降低單一持股風險。
+            """
+
+        elif max_pct >= 30:
+
+            risk_level = "中度集中"
+            risk_color = "#F6BD16"
+
+            comment = f"""
+            目前投資組合以
+            <b>{max_stock}</b>
+            為核心持股。
+
+            <br><br>
+
+            資產配置結構尚屬穩定，
+            但仍需留意產業循環風險。
+            """
+
+        else:
+
+            risk_level = "健康配置"
+            risk_color = "#00C897"
+
+            comment = f"""
+            您目前的投資組合配置相對健康。
+
+            <br><br>
+
+            核心持股為
+            <b>{max_stock}</b>，
+            資產分散程度良好。
+
+            <br><br>
+
+            目前具備較佳的風險平衡能力。
+            """
+
+        st.markdown(f"""
+        <div class="ai-card">
+
+            <div style="
+                display:flex;
+                justify-content:space-between;
+                align-items:center;
+                margin-bottom:18px;
+            ">
+
+                <div class="ai-title">
+                    🤖 AI 投資分析
+                </div>
+
+                <div style="
+                    background:{risk_color};
+                    color:white;
+                    padding:6px 14px;
+                    border-radius:999px;
+                    font-size:12px;
+                    font-weight:700;
+                ">    
+                    {risk_level}
+                </div>
+
+            </div>
+
+            <div class="ai-content">
+                {comment}
+            </div>
+
+        </div>
+        """, unsafe_allow_html=True)
 # ==============================================================================
 # Tab 2: 個股深度分析 (移入 Tab 且更新 UI)
 # ==============================================================================
