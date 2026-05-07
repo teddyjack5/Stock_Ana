@@ -75,7 +75,12 @@ def fetch_chip_data_cached(stock_id):
     dl_cache = DataLoader()
     try:
         if "FINMIND_TOKEN" in st.secrets:
-            dl_cache.login(token=st.secrets["FINMIND_TOKEN"])
+            try:
+                # 優先嘗試標準登入方法
+                dl_cache.login(token=st.secrets["FINMIND_TOKEN"])
+            except:
+                # 如果方法不存在，直接強制寫入屬性
+                dl_cache.token = st.secrets["FINMIND_TOKEN"]
 
         df = dl_cache.taiwan_stock_institutional_investors(
             stock_id=stock_id.split('.')[0],
