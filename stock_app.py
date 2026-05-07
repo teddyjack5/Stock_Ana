@@ -103,6 +103,27 @@ def fetch_chip_data_cached(stock_id):
         st.error(f"❌ 籌碼 API 錯誤 ({stock_id}): {e}")
         return pd.DataFrame()
 
+def extract_real_url(entry):
+    try:
+        # 🔥 優先從 summary 抓
+        summary = entry.get("summary", "")
+        match = re.search(r'href="(https?://[^"]+)"', summary)
+        if match:
+            return match.group(1)
+
+        # 🔥 次優：從 links 抓（有些 RSS 會放這）
+        if "links" in entry and len(entry.links) > 0:
+            for link in entry.links:
+                if link.get("href", "").startswith("http"):
+                    return link["href"]
+
+        # 🔥 fallback
+        return entry.get("link", "")
+
+    except Exception as e:
+        print("URL解析錯誤:", e)
+        return entry.get("link", "")
+
 @st.cache_data(ttl=600)
 def fetch_news_data_cached(stock_code, keywords):
 
@@ -175,7 +196,7 @@ def fetch_news_data_cached(stock_code, keywords):
             rows.append({
                 "datetime": entry.get("published", ""),
                 "title": entry.get("title", ""),
-                "url": entry.get("link", ""),
+                "url": extract_real_url(entry),
                 "source": "Google News"
             })
 
