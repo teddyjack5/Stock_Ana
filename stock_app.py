@@ -1332,54 +1332,35 @@ with tab_news:
             # =============================
             df_news = fetch_news_data_cached(stock_code, keywords)
 
+            def clean_html(raw_html):
+                if not raw_html:
+                    return ""
+                clean = re.sub('<.*?>', '', raw_html)
+                return clean
+
             # =============================
             # 🎨 UI
             # =============================
             if not df_news.empty:
 
                 for _, row in df_news.head(8).iterrows():
+
+                    raw_summary = row.get('summary', '')
+
+                    title = clean_html(row.get('title', '無標題'))
+                    summary = clean_html(raw_summary)
+                    link = extract_real_url(raw_summary, row.get('link', '#'))
                     date_str = str(row.get('date', ''))[:10]
-                    title = row.get('title', '無標題')
-                    summary = row.get('summary', '')
-                    link = row.get('link', '#')
 
-                    st.markdown(f"""<div style="
-                    background:#131722;
-                    border:1px solid #2A2E39;
-                    border-radius:10px;
-                    padding:12px;
-                    margin-bottom:10px;
-                    ">
-                    <div style="color:#9BA3AF; font-size:12px;">
-                    {date_str}
-                    </div>
-
-                    <div style="
-                    color:white;
-                    font-size:15px;
-                    margin-top:6px;
-                    margin-bottom:6px;
-                    font-weight:500;
-                    ">
-                    {title}
-                    </div>
-
-                    <div style="
-                    color:#9BA3AF;
-                    font-size:13px;
-                    margin-bottom:8px;
-                    ">
-                    {summary}
-                    </div>
-
-                    <a href="{link}" target="_blank" style="
-                    color:#26A69A;
-                    font-size:13px;
-                    text-decoration:none;
-                    ">
-                    🔗 查看全文
-                    </a>
-                    </div>""", unsafe_allow_html=True)
+                    html = f"""
+                <div style="background:#131722;border:1px solid #2A2E39;border-radius:10px;padding:12px;margin-bottom:10px;">
+                <div style="color:#9BA3AF;font-size:12px;">{date_str}</div>
+                <div style="color:white;font-size:15px;margin:6px 0;font-weight:500;">{title}</div>
+                <div style="color:#9BA3AF;font-size:13px;margin-bottom:8px;">{summary}</div>
+                <a href="{link}" target="_blank" style="color:#26A69A;font-size:13px;text-decoration:none;">🔗 查看全文</a>
+                </div>
+                """
+                    st.markdown(html, unsafe_allow_html=True)
 
             else:
                 st.warning("⚠️ 無新聞資料（已啟用雙來源仍為空，請檢查網路或 API）")
