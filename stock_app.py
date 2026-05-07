@@ -103,17 +103,40 @@ def fetch_chip_data_cached(stock_id):
         st.error(f"❌ 籌碼 API 錯誤 ({stock_id}): {e}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=3600) # 新聞快取 1 小時
-def fetch_news_data_cached(stock_id):
-    dl_cache = DataLoader()
+@st.cache_data(ttl=3600)
+def fetch_news_data_cached(keyword):
+    """
+    使用 FinMind API 抓取新聞。
+    將 stock_id 參數改為 keyword，因為我們實際上是用文字（如"台積電"）在搜尋。
+    """
     try:
+        url = "https://api.finmindtrade.com/api/v4/data"
+        parameter = {
+            "dataset": "TaiwanStockNews",
+            "start_date": (datetime.now() - timedelta(days=5)).strftime('%Y-%m-%d'),
+            "end_date": datetime.now().strftime('%Y-%m-%d'),
+        }
+        
+        # 如果有設定 Token，則加入
         if "FINMIND_TOKEN" in st.secrets:
-            dl_cache.set_token(token=st.secrets["FINMIND_TOKEN"])
-        return dl_cache.taiwan_stock_news(
-            stock_id=stock_id.split('.')[0], 
-            start_date=(datetime.now() - timedelta(days=5)).strftime('%Y-%m-%d')
-        )
-    except:
+            parameter["token"] = st.secrets["FINMIND_TOKEN"]
+
+        # 直接呼叫 API
+        resp = requests.get(url, params=parameter)
+        data = resp.json()
+        
+        if data["msg"] == "success" and len(data["data"]) > 0:
+            df = pd.DataFrame(data["data"])
+            
+            # 💡 關鍵：在這裡進行本地端的關鍵字篩選
+            # FinMind 的 API 有時無法精準只回傳特定關鍵字，所以我們先抓最近的新聞，再自己篩選
+            df_filtered = df[df['title'].str.contains(keyword, na=False) | df['summary'].str.contains(keyword, na=False)]
+            return df_filtered
+        else:
+            return pd.DataFrame()
+
+    except Exception as e:
+        print(f"Error fetching news for {keyword}: {e}")
         return pd.DataFrame()
 
 # 初始化 DataLoader (用於其他未快取的輕量操作)
@@ -1202,11 +1225,10 @@ with tab_news:
 
         try:
             # =============================
-            # 🔍 1. 關鍵字強化（核心升級）
+            # 🔍 1. 關鍵字強化
             # =============================
             stock_code = ticker_input.split('.')[0]
 
-            # 👉 你可以自己維護這個 mapping（非常重要）
             stock_map = {
                 "2330": ["台積電", "TSMC", "半導體"],
                 "2356": ["英業達", "Inventec", "電子代工"],
@@ -1214,21 +1236,20 @@ with tab_news:
             }
 
             keywords = [stock_code]
-
             if stock_code in stock_map:
                 keywords += stock_map[stock_code]
 
             # =============================
-            # 🧠 2. 多關鍵字搜尋（提高命中率）
+            # 🧠 2. 多關鍵字搜尋
             # =============================
             all_news = []
-
+            
+            # 這裡我們用迴圈去搜尋 map 裡面的所有關鍵字
             for kw in keywords:
                 df_tmp = fetch_news_data_cached(kw)
                 if df_tmp is not None and not df_tmp.empty:
                     all_news.append(df_tmp)
 
-            # 合併
             if all_news:
                 df_news = pd.concat(all_news, ignore_index=True)
             else:
@@ -1239,32 +1260,31 @@ with tab_news:
             # =============================
             if df_news.empty:
                 st.warning("⚠️ 個股新聞較少，改為顯示產業新聞")
-
                 fallback_keywords = ["台股", "半導體", "電子產業"]
-
                 for kw in fallback_keywords:
                     df_tmp = fetch_news_data_cached(kw)
                     if df_tmp is not None and not df_tmp.empty:
                         df_news = df_tmp
-                        break
+                        break # 找到就跳出
 
             # =============================
             # 📊 4. 整理資料
             # =============================
             if not df_news.empty:
-                df_news = df_news.drop_duplicates(subset=['title'], keep='first')
-
+                # 確保欄位存在，因為 API 格式可能會變
+                if 'title' in df_news.columns:
+                    df_news = df_news.drop_duplicates(subset=['title'], keep='first')
                 if 'date' in df_news.columns:
                     df_news = df_news.sort_values(by='date', ascending=False)
 
                 # =============================
-                # 🎨 5. UI 優化（專業版）
+                # 🎨 5. UI 優化
                 # =============================
                 for _, row in df_news.head(8).iterrows():
-
-                    date_str = row.get('date', '')[:10]
+                    date_str = str(row.get('date', ''))[:10]
                     title = row.get('title', '無標題')
-                    summary = row.get('summary', '無摘要')
+                    # FinMind API 不一定有 summary 欄位，沒有就顯示空字串
+                    summary = row.get('summary', '') 
                     link = row.get('link', '#')
 
                     st.markdown(f"""
@@ -1289,9 +1309,8 @@ with tab_news:
                         </a>
                     </div>
                     """, unsafe_allow_html=True)
-
             else:
                 st.info("⚠️ 目前沒有相關新聞資料")
 
         except Exception as e:
-            st.error(f"新聞抓取失敗：{e}")
+            st.error(f"新聞模組發生錯誤：{e}")
