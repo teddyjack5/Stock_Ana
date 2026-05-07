@@ -103,42 +103,87 @@ def fetch_chip_data_cached(stock_id):
         st.error(f"❌ 籌碼 API 錯誤 ({stock_id}): {e}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=3600)
-def fetch_news_data_cached(keyword):
+@st.cache_data(ttl=300)
+def fetch_news_data_cached(stock_id, keywords=None):
     """
-    使用 FinMind API 抓取新聞。
-    將 stock_id 參數改為 keyword，因為我們實際上是用文字（如"台積電"）在搜尋。
+    升級版新聞抓取：
+    1️⃣ FinMind（主來源）
+    2️⃣ Yahoo RSS（fallback）
+    3️⃣ 多關鍵字過濾
     """
+
+    all_df = []
+
     try:
+        # =============================
+        # 🥇 FinMind 主來源
+        # =============================
         url = "https://api.finmindtrade.com/api/v4/data"
         parameter = {
             "dataset": "TaiwanStockNews",
-            "start_date": (datetime.now() - timedelta(days=5)).strftime('%Y-%m-%d'),
+            "data_id": stock_id,   # ✅ 正確用法
+            "start_date": (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'),
             "end_date": datetime.now().strftime('%Y-%m-%d'),
         }
-        
-        # 如果有設定 Token，則加入
+
         if "FINMIND_TOKEN" in st.secrets:
             parameter["token"] = st.secrets["FINMIND_TOKEN"]
 
-        # 直接呼叫 API
-        resp = requests.get(url, params=parameter)
+        resp = requests.get(url, params=parameter, timeout=10)
         data = resp.json()
-        
-        if data["msg"] == "success" and len(data["data"]) > 0:
+
+        if data.get("msg") == "success" and data.get("data"):
             df = pd.DataFrame(data["data"])
-            
-            # 💡 關鍵：在這裡進行本地端的關鍵字篩選
-            # FinMind 的 API 有時無法精準只回傳特定關鍵字，所以我們先抓最近的新聞，再自己篩選
-            df_filtered = df[df['title'].str.contains(keyword, na=False) | df['summary'].str.contains(keyword, na=False)]
-            return df_filtered
-        else:
-            return pd.DataFrame()
+            all_df.append(df)
 
     except Exception as e:
-        print(f"Error fetching news for {keyword}: {e}")
-        return pd.DataFrame()
+        print(f"FinMind error: {e}")
 
+    # =============================
+    # 🥈 Yahoo RSS fallback（超重要）
+    # =============================
+    try:
+        search_query = stock_id if not keywords else " ".join(keywords)
+        rss_url = f"https://tw.news.yahoo.com/rss/search?p={search_query}"
+
+        resp = requests.get(rss_url, timeout=10)
+        soup = BeautifulSoup(resp.content, "xml")
+
+        items = soup.find_all("item")
+
+        rss_data = []
+        for item in items:
+            rss_data.append({
+                "date": item.pubDate.text if item.pubDate else "",
+                "title": item.title.text if item.title else "",
+                "summary": item.description.text if item.description else "",
+                "link": item.link.text if item.link else ""
+            })
+
+        if rss_data:
+            df_rss = pd.DataFrame(rss_data)
+            all_df.append(df_rss)
+
+    except Exception as e:
+        print(f"Yahoo RSS error: {e}")
+
+    # =============================
+    # 🧠 合併 + 關鍵字過濾
+    # =============================
+    if all_df:
+        df_news = pd.concat(all_df, ignore_index=True)
+
+        # 關鍵字過濾（更寬鬆）
+        if keywords:
+            pattern = "|".join(keywords)
+            df_news = df_news[
+                df_news['title'].str.contains(pattern, case=False, na=False) |
+                df_news['summary'].str.contains(pattern, case=False, na=False)
+            ]
+
+        return df_news
+
+    return pd.DataFrame()
 # 初始化 DataLoader (用於其他未快取的輕量操作)
 dl = DataLoader()
 
@@ -1221,18 +1266,20 @@ with tab_analysis:
 # ==============================================================================
 with tab_news:
     if show_news and ticker_input:
-        st.subheader("📰 台灣產經新聞")
+        st.subheader("📰 台灣產經新聞（升級版）")
 
         try:
             # =============================
-            # 🔍 1. 關鍵字強化
+            # 🔍 1. 股票與關鍵字
             # =============================
             stock_code = ticker_input.split('.')[0]
 
             stock_map = {
                 "2330": ["台積電", "TSMC", "半導體"],
-                "2356": ["英業達", "Inventec", "電子代工"],
-                "2618": ["長榮航", "EVA", "交通空運"]
+                "2356": ["英業達", "Inventec", "伺服器"],
+                "2317": ["鴻海", "Foxconn", "AI伺服器"],
+                "2603": ["長榮", "貨櫃航運"],
+                "2618": ["長榮航", "EVA Air", "航空"]
             }
 
             keywords = [stock_code]
@@ -1240,77 +1287,84 @@ with tab_news:
                 keywords += stock_map[stock_code]
 
             # =============================
-            # 🧠 2. 多關鍵字搜尋
+            # 🧠 2. 抓新聞（升級API）
             # =============================
-            all_news = []
-            
-            # 這裡我們用迴圈去搜尋 map 裡面的所有關鍵字
-            for kw in keywords:
-                df_tmp = fetch_news_data_cached(kw)
-                if df_tmp is not None and not df_tmp.empty:
-                    all_news.append(df_tmp)
-
-            if all_news:
-                df_news = pd.concat(all_news, ignore_index=True)
-            else:
-                df_news = pd.DataFrame()
+            df_news = fetch_news_data_cached(stock_code, keywords)
 
             # =============================
-            # 🔄 3. fallback（抓產業新聞）
+            # 🔄 fallback（產業）
             # =============================
             if df_news.empty:
                 st.warning("⚠️ 個股新聞較少，改為顯示產業新聞")
-                fallback_keywords = ["台股", "半導體", "電子產業"]
-                for kw in fallback_keywords:
-                    df_tmp = fetch_news_data_cached(kw)
-                    if df_tmp is not None and not df_tmp.empty:
-                        df_news = df_tmp
-                        break # 找到就跳出
+
+                fallback_keywords = ["台股", "半導體", "AI"]
+                df_news = fetch_news_data_cached("", fallback_keywords)
 
             # =============================
-            # 📊 4. 整理資料
+            # 📊 整理
             # =============================
             if not df_news.empty:
-                # 確保欄位存在，因為 API 格式可能會變
+
                 if 'title' in df_news.columns:
                     df_news = df_news.drop_duplicates(subset=['title'], keep='first')
+
                 if 'date' in df_news.columns:
-                    df_news = df_news.sort_values(by='date', ascending=False)
+                    try:
+                        df_news['date'] = pd.to_datetime(df_news['date'], errors='coerce')
+                        df_news = df_news.sort_values(by='date', ascending=False)
+                    except:
+                        pass
 
                 # =============================
-                # 🎨 5. UI 優化
+                # 🎨 UI（TradingView風格卡片）
                 # =============================
-                for _, row in df_news.head(8).iterrows():
+                for _, row in df_news.head(10).iterrows():
                     date_str = str(row.get('date', ''))[:10]
                     title = row.get('title', '無標題')
-                    # FinMind API 不一定有 summary 欄位，沒有就顯示空字串
-                    summary = row.get('summary', '') 
+                    summary = row.get('summary', '')
                     link = row.get('link', '#')
 
                     st.markdown(f"""
                     <div style="
                         background:#131722;
                         border:1px solid #2A2E39;
-                        border-radius:10px;
-                        padding:12px;
-                        margin-bottom:8px;
+                        border-radius:12px;
+                        padding:14px;
+                        margin-bottom:10px;
+                        transition:0.2s;
                     ">
-                        <p style="color:#9BA3AF; font-size:12px; margin:0;">
-                            {date_str}
-                        </p>
-                        <p style="color:white; font-size:14px; margin:5px 0;">
+                        <div style="color:#9BA3AF;font-size:12px;">
+                            🕒 {date_str}
+                        </div>
+
+                        <div style="
+                            color:white;
+                            font-size:15px;
+                            font-weight:600;
+                            margin:6px 0;
+                        ">
                             {title}
-                        </p>
-                        <p style="color:#9BA3AF; font-size:13px;">
-                            {summary}
-                        </p>
-                        <a href="{link}" target="_blank" style="color:#4FC3F7;">
-                            查看全文 →
-                        </a>
+                        </div>
+
+                        <div style="
+                            color:#9BA3AF;
+                            font-size:13px;
+                            line-height:1.4;
+                        ">
+                            {summary[:120]}...
+                        </div>
+
+                        <div style="margin-top:8px;">
+                            <a href="{link}" target="_blank"
+                               style="color:#4FC3F7; text-decoration:none;">
+                                🔗 查看全文
+                            </a>
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
+
             else:
-                st.info("⚠️ 目前沒有相關新聞資料")
+                st.info("⚠️ 目前沒有相關新聞")
 
         except Exception as e:
             st.error(f"新聞模組發生錯誤：{e}")
