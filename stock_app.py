@@ -1385,7 +1385,13 @@ with tab_fundamental:
         stock_id = ticker_input.split('.')[0]
         dl = DataLoader()
         if "FINMIND_TOKEN" in st.secrets:
-            dl.login(token=st.secrets["FINMIND_TOKEN"])
+            token = st.secrets["FINMIND_TOKEN"]
+            if hasattr(dl, 'login'):
+                dl.login(token=token)
+            elif hasattr(dl, 'set_token'):
+                dl.set_token(token=token)
+            else:
+                dl.token = token
         
         # 抓取最近 3 年的 PER 資料
         df_per = dl.taiwan_stock_per_pbr(
