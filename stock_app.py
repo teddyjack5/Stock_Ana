@@ -1519,7 +1519,8 @@ with tab_comparison:
     if compare_targets:
         try:
             # 根據選擇的 time_period 抓取資料
-            comp_data = yf.download(compare_targets, period=time_period, interval="1d")['Close']
+            df_raw = yf.download(compare_targets, period=time_period, interval="1d", auto_adjust=True)
+            comp_data = df_raw['Close']
             
             if not comp_data.empty:
                 # 核心邏輯：歸一化 (將區間起點設為 100)
