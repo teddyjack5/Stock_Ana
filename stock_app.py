@@ -1392,71 +1392,78 @@ with tab_fundamental:
             elif hasattr(dl, 'set_token'): dl.set_token(token=token)
             else: dl.token = token
 
-        # 1. 抓取 PE 資料
+        # 1. 抓取 FinMind 的 PE 資料
         df_per = dl.taiwan_stock_per_pbr(
             stock_id=stock_id,
             start_date=(datetime.now() - timedelta(days=365*3)).strftime('%Y-%m-%d')
         )
         
         if not df_per.empty:
-            # --- 💡 核心修正：處理欄位缺失問題 ---
-            # 將日期轉為 datetime 格式方便合併
+            # --- 💡 關鍵修正區：處理 yfinance 的 MultiIndex ---
             df_per['date'] = pd.to_datetime(df_per['date'])
             
-            # 如果 FinMind 沒有 close 欄位，我們從你原本就有的 yfinance data 拿
-            # 假設你之前的 yfinance 資料變數名稱是 'data'
-            if 'close' not in df_per.columns and 'Close' not in df_per.columns:
-                # 從 yfinance 的 data 提取日期與收盤價
-                price_df = data[['Close']].reset_index()
-                price_df.columns = ['date', 'close_from_yf']
-                # 合併兩份資料
-                df_combined = pd.merge(df_per, price_df, on='date', how='inner')
-                main_price_col = 'close_from_yf'
-            else:
-                # 判斷大小寫並統一欄位名
-                main_price_col = 'close' if 'close' in df_per.columns else 'Close'
-                df_combined = df_per
+            # 複製一份 data 來處理，避免影響到其他 Tab
+            temp_yf_data = data.copy()
+            
+            # 【修正點 1】壓平 MultiIndex：將 ('Close', '2330.TW') 變成 'Close'
+            if isinstance(temp_yf_data.columns, pd.MultiIndex):
+                temp_yf_data.columns = temp_yf_data.columns.get_level_values(0)
+            
+            # 【修正點 2】提取收盤價並重設索引
+            price_df = temp_yf_data[['Close']].reset_index()
+            price_df.columns = ['date', 'close_from_yf']
+            
+            # 【修正點 3】統一日期格式（移除時區）：這是為了讓 merge 能對上
+            price_df['date'] = pd.to_datetime(price_df['date']).dt.tz_localize(None)
+            df_per['date'] = pd.to_datetime(df_per['date']).dt.tz_localize(None)
 
-            # 2. 計算歷史 EPS (收盤價 / PE)
-            # 確保 PE 大於 0 才計算，避免無限大
-            df_combined = df_combined[df_combined['PE'] > 0]
-            df_combined['hist_eps'] = df_combined[main_price_col] / df_combined['PE']
+            # 2. 合併兩份資料
+            df_combined = pd.merge(df_per, price_df, on='date', how='inner')
             
-            # 3. 繪圖
-            multiples = [10, 15, 20, 25, 30] 
-            fig_river = go.Figure()
-            
-            for m in multiples:
+            if not df_combined.empty:
+                # 確保 PE 大於 0 才計算
+                df_combined = df_combined[df_combined['PE'] > 0]
+                df_combined['hist_eps'] = df_combined['close_from_yf'] / df_combined['PE']
+                
+                # 3. 繪圖
+                multiples = [10, 15, 20, 25, 30] 
+                fig_river = go.Figure()
+                
+                # 使用你先前的河流區塊邏輯
+                for m in multiples:
+                    fig_river.add_trace(go.Scatter(
+                        x=df_combined['date'], 
+                        y=df_combined['hist_eps'] * m, 
+                        name=f"{m}x PER", 
+                        line=dict(width=0.5),
+                        stackgroup='one',
+                        fill='tonexty'
+                    ))
+                
+                # 疊加實際股價
                 fig_river.add_trace(go.Scatter(
                     x=df_combined['date'], 
-                    y=df_combined['hist_eps'] * m, 
-                    name=f"{m}x PER", 
-                    line=dict(width=0.5),
-                    stackgroup='one',
-                    fill='tonexty'
+                    y=df_combined['close_from_yf'],
+                    name="實際股價", 
+                    line=dict(color='#FF4B4B', width=2)
                 ))
-            
-            # 疊加實際股價
-            fig_river.add_trace(go.Scatter(
-                x=df_combined['date'], 
-                y=df_combined[main_price_col],
-                name="實際股價", 
-                line=dict(color='#FF4B4B', width=2)
-            ))
-            
-            fig_river.update_layout(
-                template="plotly_dark",
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                xaxis_title="日期",
-                yaxis_title="股價",
-                hovermode="x unified"
-            )
-            st.plotly_chart(fig_river, use_container_width=True)
-            
+                
+                fig_river.update_layout(
+                    template="plotly_dark",
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    xaxis_title="日期",
+                    yaxis_title="股價",
+                    hovermode="x unified"
+                )
+                st.plotly_chart(fig_river, use_container_width=True)
+            else:
+                st.warning("⚠️ 合併資料後無相符日期，請確認 yfinance 數據範圍是否包含近三年。")
         else:
             st.info("⚠️ FinMind 暫無該股之 PER 歷史資料")
             
+    except Exception as e:
+        st.error(f"河流圖載入失敗: {e}")
     except Exception as e:
         # 如果報錯，把錯誤原因印出來方便 debug
         st.error(f"河流圖載入失敗: {str(e)}")
