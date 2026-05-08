@@ -1492,57 +1492,80 @@ with tab_comparison:
     try:
         # 1. 獲取當前個股資訊
         target_stock = yf.Ticker(ticker_input)
-        sector = target_stock.info.get('sector', 'Unknown')
         industry = target_stock.info.get('industry', 'Unknown')
-        
         st.write(f"🔍 偵測到產業分類：**{industry}**")
 
-        # 2. 建立動態比較清單 (提供一些預設值)
-        default_peers = ["0050.TW", "2330.TW", "2317.TW"] # 基礎對照組
+        # ==========================================
+        # 🛠️ 核心修改：動態輸入功能
+        # ==========================================
         
-        # 讓使用者可以動態增加代號
+        # 初始化自定義選項清單 (如果不存在於 session_state)
+        if 'custom_compare_options' not in st.session_state:
+            st.session_state.custom_compare_options = ["0050.TW", "2330.TW", "2317.TW", "2454.TW"]
+
+        # 讓使用者手動輸入代號
+        new_code = st.text_input("➕ 手動新增比較代號 (輸入後按 Enter，例如: 2303.TW)").upper().strip()
+        
+        if new_code:
+            if new_code not in st.session_state.custom_compare_options:
+                st.session_state.custom_compare_options.append(new_code)
+                st.rerun() # 立即重整頁面讓新選項出現在選單中
+
+        # 確保目前的 ticker_input 也在選項中
+        if ticker_input not in st.session_state.custom_compare_options:
+            st.session_state.custom_compare_options.append(ticker_input)
+
+        # 讓使用者從「已擴充」的清單中選擇
         compare_targets = st.multiselect(
-            "新增要比較的代號 (例如: 2454.TW, 2303.TW)",
-            options=["0050.TW", "0056.TW", "2330.TW", "2317.TW", "2454.TW", "2382.TW"],
+            "選擇要比較的對象",
+            options=st.session_state.custom_compare_options,
             default=[ticker_input] + (["0050.TW"] if ticker_input != "0050.TW" else [])
         )
+        # ==========================================
 
         if compare_targets:
             # 抓取資料 (最近半年)
             comp_data = yf.download(compare_targets, period="6mo", interval="1d")['Close']
             
-            # 歸一化處理 (Normalization)
-            comp_norm = (comp_data / comp_data.iloc[0]) * 100
-            
-            fig_comp = go.Figure()
-            for col in comp_norm.columns:
-                is_self = col == ticker_input
-                fig_comp.add_trace(go.Scatter(
-                    x=comp_norm.index, 
-                    y=comp_norm[col],
-                    name=col,
-                    line=dict(width=3 if is_self else 1.5),
-                    opacity=1 if is_self else 0.7
-                ))
-            
-            fig_comp.update_layout(
-                title=f"自起始日後的累積報酬率 (%)",
-                template="plotly_dark",
-                hovermode="x unified",
-                yaxis_title="績效 (起始為100)",
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)'
-            )
-            st.plotly_chart(fig_comp, use_container_width=True)
-            
-            # --- 額外 Bonus：績效排行榜 ---
-            st.write("🏆 **期間績效排行**")
-            last_perf = comp_norm.iloc[-1].sort_values(ascending=False)
-            perf_cols = st.columns(len(last_perf))
-            for i, (name, val) in enumerate(last_perf.items()):
-                perf_cols[i].metric(name, f"{val:.1f}%", f"{val-100:.1f}%")
+            # 若下載失敗 (例如輸入錯誤的代號)，處理空的 DataFrame
+            if comp_data.empty:
+                st.error("❌ 下載失敗，請檢查輸入的代號是否正確。")
+            else:
+                # 歸一化處理 (Normalization)
+                comp_norm = (comp_data / comp_data.iloc[0]) * 100
+                
+                fig_comp = go.Figure()
+                # 處理多個 columns (多支股票)
+                for col in (comp_norm.columns if isinstance(comp_norm, pd.DataFrame) else [comp_norm.name]):
+                    is_self = col == ticker_input
+                    fig_comp.add_trace(go.Scatter(
+                        x=comp_norm.index, 
+                        y=comp_norm[col] if isinstance(comp_norm, pd.DataFrame) else comp_norm,
+                        name=col,
+                        line=dict(width=3 if is_self else 1.5),
+                        opacity=1 if is_self else 0.7
+                    ))
+                
+                fig_comp.update_layout(
+                    title=f"自起始日後的累積報酬率 (%)",
+                    template="plotly_dark",
+                    hovermode="x unified",
+                    yaxis_title="績效 (起始為100)",
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)'
+                )
+                st.plotly_chart(fig_comp, use_container_width=True)
+                
+                # --- 績效排行榜 ---
+                st.write("🏆 **期間績效排行**")
+                if isinstance(comp_norm, pd.DataFrame):
+                    last_perf = comp_norm.iloc[-1].sort_values(ascending=False)
+                    perf_cols = st.columns(len(last_perf))
+                    for i, (name, val) in enumerate(last_perf.items()):
+                        perf_cols[i].metric(name, f"{val:.1f}%", f"{val-100:.1f}%")
+                else:
+                    st.metric(ticker_input, f"{comp_norm.iloc[-1]:.1f}%")
 
     except Exception as e:
-        st.error(f"動態比較載入失敗 (可能因 yfinance info 限制): {e}")
-        st.info("💡 建議：請在上方多選框手動輸入代號進行比較。")
+        st.error(f"動態比較載入失敗: {e}")
         
