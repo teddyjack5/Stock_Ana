@@ -1489,72 +1489,75 @@ with tab_fundamental:
 with tab_comparison:
     st.subheader("⚖️ 同業動態績效比較")
     
-    try:
-        # 1. 基礎設定
-        base_options = ["0050.TW", "2330.TW", "2317.TW", "0056.TW"] # 常用對照組
-        
-        # 初始化 session_state 中的「選擇清單」
-        if 'selected_targets' not in st.session_state:
-            # 預設選中當前個股 + 0050
-            st.session_state.selected_targets = [ticker_input] + (["0050.TW"] if ticker_input != "0050.TW" else [])
+    # 1. 確保初始化：只在第一次執行時設定預設值
+    if 'comparison_selector' not in st.session_state:
+        st.session_state.comparison_selector = [ticker_input] + (["0050.TW"] if ticker_input != "0050.TW" else [])
 
-        # ==========================================
-        # 🛠️ 改良版：手動新增邏輯 (使用 callback 確保不重置)
-        # ==========================================
-        def handle_add_stock():
-            new_code = st.session_state.temp_input.upper().strip()
-            if new_code and new_code not in st.session_state.selected_targets:
-                # 直接加入已選擇清單
-                st.session_state.selected_targets.append(new_code)
-            # 清空輸入框
-            st.session_state.temp_input = ""
+    # 2. 定義增加股票的 Callback function
+    # 這是最穩定的做法：在輸入框變動時，直接更新 multiselect 綁定的那個 key
+    def handle_add_stock():
+        new_code = st.session_state.new_stock_input.upper().strip()
+        if new_code:
+            # 取得目前 multiselect 裡已經選好的代號
+            current_selection = list(st.session_state.comparison_selector)
+            if new_code not in current_selection:
+                current_selection.append(new_code)
+                # 重要：直接更新 multiselect 的 key 值
+                st.session_state.comparison_selector = current_selection
+        # 清空輸入框
+        st.session_state.new_stock_input = ""
 
-        st.text_input("➕ 手動新增比較代號 (輸入後按 Enter)", 
-                     key="temp_input", 
-                     on_change=handle_add_stock,
-                     placeholder="例如: 2618.TW")
+    # 3. 手動輸入框 (使用 on_change 直接觸發邏輯)
+    st.text_input("➕ 新增比較代號 (輸入後按 Enter)", 
+                 key="new_stock_input", 
+                 on_change=handle_add_stock,
+                 placeholder="例如: 2454.TW")
 
-        # 整理下拉選單的選項：基礎選項 + 目前已經選中的股票 (去掉重複)
-        dynamic_options = sorted(list(set(base_options + st.session_state.selected_targets)))
+    # 4. 準備選項：基礎選項 + 目前已經選中的內容
+    # 注意：options 必須包含「目前選中的所有代號」，否則標籤會消失
+    base_options = ["0050.TW", "2330.TW", "2317.TW", "0056.TW"]
+    all_options = sorted(list(set(base_options + st.session_state.comparison_selector)))
 
-        # 使用 multiselect 管理清單
-        # 注意：我們把當前選擇的狀態直接給 value，這樣點選 x 移除時也會同步更新
-        compare_targets = st.multiselect(
-            "目前比較的對象 (點擊 x 可移除)",
-            options=dynamic_options,
-            default=st.session_state.selected_targets,
-            key="comparison_selector"
-        )
-        
-        # 同步回 session_state，確保下次 rerun 不會丟失
-        st.session_state.selected_targets = compare_targets
-        # ==========================================
+    # 5. 多選框：關鍵在於只用 key，不要傳入 default
+    # 這樣它會完全依照 st.session_state.comparison_selector 的內容來顯示
+    compare_targets = st.multiselect(
+        "目前比較對象 (可點擊 x 移除)",
+        options=all_options,
+        key="comparison_selector"
+    )
 
-        if compare_targets:
-            # 抓取資料 (最近半年)
+    # 6. 開始繪圖邏輯
+    if compare_targets:
+        try:
+            # 抓取資料
             comp_data = yf.download(compare_targets, period="6mo", interval="1d")['Close']
             
             if not comp_data.empty:
-                # 歸一化處理
+                # 數據歸一化 (以第一天為 100)
                 comp_norm = (comp_data / comp_data.iloc[0]) * 100
                 
-                # ... (後續 Plotly 繪圖程式碼與之前相同) ...
                 fig_comp = go.Figure()
-                # 修正：處理多個或單個 columns 的情況
-                cols = comp_norm.columns if isinstance(comp_norm, pd.DataFrame) else [comp_norm.name]
-                for col in cols:
+                
+                # 處理單支或多支股票的情況
+                if isinstance(comp_norm, pd.Series):
+                    # 只有一支股票時，轉成 DataFrame 方便處理
+                    comp_norm = comp_norm.to_frame()
+
+                for col in comp_norm.columns:
                     is_self = (col == ticker_input)
-                    y_val = comp_norm[col] if isinstance(comp_norm, pd.DataFrame) else comp_norm
                     fig_comp.add_trace(go.Scatter(
-                        x=comp_norm.index, y=y_val, name=col,
+                        x=comp_norm.index, 
+                        y=comp_norm[col], 
+                        name=col,
                         line=dict(width=3 if is_self else 1.5),
-                        opacity=1 if is_self else 0.7
+                        opacity=1 if is_self else 0.8
                     ))
                 
                 fig_comp.update_layout(
-                    title="累積報酬率比較 (%)",
+                    title="累積報酬率比較 (%) - 起始點為 100",
                     template="plotly_dark",
                     hovermode="x unified",
+                    yaxis_title="績效 (%)",
                     paper_bgcolor='rgba(0,0,0,0)',
                     plot_bgcolor='rgba(0,0,0,0)'
                 )
@@ -1566,6 +1569,8 @@ with tab_comparison:
                 perf_cols = st.columns(len(last_perf))
                 for i, (name, val) in enumerate(last_perf.items()):
                     perf_cols[i].metric(name, f"{val:.1f}%", f"{val-100:.1f}%")
+            else:
+                st.warning("⚠️ 找不到輸入的代號資料，請確認格式是否正確 (例如：2330.TW)")
 
-    except Exception as e:
-        st.error(f"動態比較載入失敗: {e}")
+        except Exception as e:
+            st.error(f"繪圖發生錯誤: {e}")
