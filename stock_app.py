@@ -1603,7 +1603,7 @@ with tab_comparison:
                 perf_cols = st.columns(len(last_perf))
                 for i, (name, val) in enumerate(last_perf.items()):
                     perf_cols[i].metric(name, f"{val:.1f}%", f"{val-100:.1f}%")
-           else:
+            else:
                 st.warning("⚠️ 找不到輸入的代號資料，請確認格式是否正確 (例如：2330.TW)")
 
         except Exception as e:  
