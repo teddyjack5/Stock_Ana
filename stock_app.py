@@ -1490,11 +1490,14 @@ with tab_fundamental:
 with tab_comparison:
     st.subheader("⚖️ 同業動態績效比較")
     
-    # 1. 確保初始化
+    # --- 1. 時間區間選擇器 (讓功能更有彈性) ---
+    time_period = st.radio("選擇比較區間", ["1mo", "3mo", "6mo", "1y", "ytd"], 
+                           index=2, horizontal=True) # 預設 6mo
+    
+    # --- 2. 確保初始化 ---
     if 'comparison_selector' not in st.session_state:
         st.session_state.comparison_selector = [ticker_input] + (["0050.TW"] if ticker_input != "0050.TW" else [])
 
-    # 2. Callback function
     def handle_add_stock():
         new_code = st.session_state.new_stock_input.upper().strip()
         if new_code:
@@ -1504,33 +1507,27 @@ with tab_comparison:
                 st.session_state.comparison_selector = current_selection
         st.session_state.new_stock_input = ""
 
-    # 3. 手動輸入框
-    st.text_input("➕ 新增比較代號 (輸入後按 Enter)", 
-                  key="new_stock_input", 
-                  on_change=handle_add_stock,
-                  placeholder="例如: 2454.TW")
+    st.text_input("➕ 新增比較代號 (例如: 2454.TW)", 
+                  key="new_stock_input", on_change=handle_add_stock)
 
-    # 4. 準備選項
     base_options = ["0050.TW", "2330.TW", "2317.TW", "0056.TW"]
     all_options = sorted(list(set(base_options + st.session_state.comparison_selector)))
 
-    # 5. 多選框
-    compare_targets = st.multiselect(
-        "目前比較對象 (可點擊 x 移除)",
-        options=all_options,
-        key="comparison_selector"
-    )
+    compare_targets = st.multiselect("目前比較對象", options=all_options, key="comparison_selector")
 
-    # 6. 開始繪圖邏輯
+    # --- 3. 繪圖與數據邏輯 ---
     if compare_targets:
         try:
-            comp_data = yf.download(compare_targets, period="6mo", interval="1d")['Close']
+            # 根據選擇的 time_period 抓取資料
+            comp_data = yf.download(compare_targets, period=time_period, interval="1d")['Close']
             
             if not comp_data.empty:
+                # 核心邏輯：歸一化 (將區間起點設為 100)
                 comp_norm = (comp_data / comp_data.iloc[0]) * 100
                 
                 fig_comp = go.Figure()
                 
+                # 轉成 DataFrame 統一處理
                 if isinstance(comp_norm, pd.Series):
                     comp_norm = comp_norm.to_frame()
 
@@ -1541,59 +1538,50 @@ with tab_comparison:
                         y=comp_norm[col], 
                         name=col,
                         line=dict(width=3 if is_self else 1.5),
-                        opacity=1 if is_self else 0.8,
-                        # TradingView 習慣在滑鼠移過時顯示圓點
                         mode='lines'
                     ))
                 
-                # 🛠️ TradingView 風格佈局優化
+                # TradingView 黑色專業佈局
                 fig_comp.update_layout(
-                    title="累積報酬率比較 (%) - 起始點為 100",
+                    title=f"累積報酬率比較 ({time_period}) - 起始點為 100",
                     template="plotly_dark",
                     hovermode="x unified",
-                    # 設定背景為 TradingView 招牌的深灰色
                     paper_bgcolor='#131722',
                     plot_bgcolor='#131722',
-                    # 網格線顏色調淡
-                    xaxis=dict(gridcolor='#2A2E39', zeroline=False),
-                    yaxis=dict(gridcolor='#2A2E39', zeroline=False),
-                    # 字體與圖例優化
-                    legend=dict(bgcolor='rgba(0,0,0,0)', font=dict(size=10)),
-                    margin=dict(l=0, r=0, t=50, b=0),
-                    # 十字線 (Crosshair)
-                    hoverlabel=dict(bgcolor="#2A2E39", font_size=12)
+                    xaxis=dict(gridcolor='#2A2E39', zeroline=False, showspikes=True, spikecolor="gray"),
+                    yaxis=dict(gridcolor='#2A2E39', zeroline=False, showspikes=True, spikecolor="gray"),
+                    legend=dict(bgcolor='rgba(0,0,0,0)'),
+                    margin=dict(l=0, r=0, t=50, b=0)
                 )
-                
-                # 增加十字線效果
-                fig_comp.update_xaxes(showspikes=True, spikecolor="gray", spikesnap="cursor", spikemode="across")
-                fig_comp.update_yaxes(showspikes=True, spikecolor="gray", spikesnap="cursor", spikemode="across")
 
                 st.plotly_chart(fig_comp, use_container_width=True)
                 
-                # 🚀 績效排行榜 - 台灣紅漲綠跌邏輯
-                st.write("🏆 **期間績效排行 (紅漲綠跌模式)**")
+                # --- 4. 績效排行榜 (修正紅漲綠跌邏輯) ---
+                st.write(f"🏆 **{time_period} 績效排行 (紅漲綠跌模式)**")
                 last_perf = comp_norm.iloc[-1].sort_values(ascending=False)
-                perf_cols = st.columns(len(last_perf))
                 
+                # 使用每排 4 個的排版方式，避免股票太多時卡片太擠
+                cols = st.columns(4) 
                 for i, (name, val) in enumerate(last_perf.items()):
-                    # 計算淨報酬率
                     net_return = val - 100
                     
-                    # 🔴 台灣模式：漲是紅色，跌是綠色
-                    # 注意：Streamlit 的 delta_color="normal" 是「漲綠跌紅」
-                    # 所以我們要手動判斷顏色，漲的時候給 "inverse" (在台灣設定下會變紅)
-                    # 或者更直接的做法是直接定義 delta 顏色邏輯
+                    # 🔴 台灣模式：
+                    # 如果報酬 > 0，用 inverse (變紅)
+                    # 如果報酬 < 0，用 normal (變綠)
+                    color_logic = "inverse" if net_return > 0 else "normal"
                     
-                    color_logic = "inverse" if net_return > 0 else "normal" if net_return < 0 else "off"
-                    
-                    perf_cols[i].metric(
-                        label=name, 
-                        value=f"{val:.1f}%", 
-                        delta=f"{net_return:+.1f}%",
-                        delta_color=color_logic
-                    )
+                    with cols[i % 4]:
+                        st.metric(
+                            label=name, 
+                            value=f"{val:.1f}%", 
+                            delta=f"{net_return:+.1f}%",
+                            delta_color=color_logic
+                        )
             else:
-                st.warning("⚠️ 找不到輸入的代號資料")
+                st.warning("⚠️ 找不到資料")
+
+        except Exception as e:  
+            st.error(f"繪圖發生錯誤: {e}")
 
         except Exception as e:  
             st.error(f"繪圖發生錯誤: {e}")
