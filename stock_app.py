@@ -229,36 +229,44 @@ def fetch_news_data_cached(stock_code, keywords):
 # ==============================================================================
 # 🔍 1. 定義抓取台指期資料的函數 (設定 10 分鐘快取)
 # ==============================================================================
-@st.cache_data(ttl=600)  # 👈 核心：每 600 秒自動失效並重新抓取
-def fetch_tx_futures_data():
-    """
-    抓取台指期近月合約資料。
-    yfinance 代號通常為 'WTX=F' (台指期近月)
-    """
-    try:
-        # 抓取最近兩天的資料以計算漲跌
-        ticker = yf.Ticker("WTX=F")
-        df = ticker.history(period="2d", interval="1m") # 抓取 1 分鐘 K 線
-        
-        if df.empty:
-            return None
-            
-        current_price = df['Close'].iloc[-1]
-        prev_close = df['Close'].iloc[0] # 這裡的取法視盤後邏輯可調整
-        change = current_price - prev_close
-        change_pct = (change / prev_close) * 100
-        update_time = df.index[-1].strftime('%Y-%m-%d %H:%M:%S')
-        
-        return {
-            "price": current_price,
-            "change": change,
-            "change_pct": change_pct,
-            "time": update_time,
-            "df": df
-        }
-    except Exception as e:
-        st.error(f"期貨資料抓取失敗: {e}")
-        return None
+@st.cache_data(ttl=600)  # 每10分鐘更新
+def fetch_tw_futures_night():
+
+    import yfinance as yf
+    import pandas as pd
+    from datetime import datetime
+
+    symbols = ["WTX=F", "TX=F", "TW=F"]  # 🔥 多來源備援
+
+    for sym in symbols:
+        try:
+            ticker = yf.Ticker(sym)
+            df = ticker.history(period="1d", interval="1m")
+
+            if df is not None and not df.empty:
+
+                # 🔥 取最新價
+                current_price = df['Close'].iloc[-1]
+
+                # 🔥 用當日第一筆當基準（夜盤用這個比較合理）
+                open_price = df['Close'].iloc[0]
+
+                change = current_price - open_price
+                change_pct = (change / open_price) * 100
+
+                return {
+                    "symbol": sym,
+                    "price": round(current_price, 2),
+                    "change": round(change, 2),
+                    "change_pct": round(change_pct, 2),
+                    "time": df.index[-1].strftime('%Y-%m-%d %H:%M'),
+                    "df": df
+                }
+
+        except:
+            continue
+
+    return None
 # 初始化 DataLoader (用於其他未快取的輕量操作)
 dl = DataLoader()
 
