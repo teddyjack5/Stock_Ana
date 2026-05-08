@@ -1621,7 +1621,7 @@ with tab_futures:
     st.subheader("🌙 台指期盤後即時追蹤")
     
     # 執行抓取
-    tx_data = fetch_tx_futures_data()
+    tx_data = fetch_tw_futures_night()
     
     if tx_data:
         # 顯示即時數據卡片
