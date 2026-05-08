@@ -1727,5 +1727,8 @@ with tab_futures:
 
         st.caption(f"來源：{data['source']} | 更新時間：{data['time']}")
     
-else    :
+    else:
         st.error("❌ 無法取得夜盤資料")
+
+
+
