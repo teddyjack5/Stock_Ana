@@ -1605,8 +1605,8 @@ with tab_comparison:
                     perf_cols[i].metric(name, f"{val:.1f}%", f"{val-100:.1f}%")
             else:
                 st.warning("⚠️ 找不到輸入的代號資料，請確認格式是否正確 (例如：2330.TW)")
-
-            st.error(f"繪圖發生錯誤: {e}")
+    except Exception as e:
+        st.error(f"繪圖發生錯誤: {e}")
 
 with tab_futures:
     st.subheader("🌙 台指期盤後即時追蹤")
