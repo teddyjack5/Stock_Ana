@@ -725,8 +725,8 @@ show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
 # ==============================================================================
 # 【新增 UI 優化】 - st.tabs 模組化分頁架構
 # ==============================================================================
-tab_portfolio, tab_analysis,  tab_news = st.tabs([
-    "🏢 庫存總覽", "📈 個股深度分析",  "📰 產經動態"
+tab_portfolio, tab_analysis,  tab_news, tab_fundamental, tab_comparison = st.tabs([
+    "🏢 庫存總覽", "📈 個股深度分析",  "📰 產經動態", "💎 基本面河流圖", "⚖️ 同業比較"
 ])
 
 # ==============================================================================
@@ -1377,3 +1377,121 @@ with tab_news:
 
         except Exception as e:
             st.error(f"新聞模組錯誤：{e}")
+
+with tab_fundamental:
+    st.subheader("💎 本益比河流圖 (Valuation Bands)")
+    
+    try:
+        stock_id = ticker_input.split('.')[0]
+        dl = DataLoader()
+        if "FINMIND_TOKEN" in st.secrets:
+            dl.login(token=st.secrets["FINMIND_TOKEN"])
+        
+        # 抓取最近 3 年的 PER 資料
+        df_per = dl.taiwan_stock_per_pbr(
+            stock_id=stock_id,
+            start_date=(datetime.now() - timedelta(days=365*3)).strftime('%Y-%m-%d')
+        )
+        
+        if not df_per.empty:
+            # 取得目前的 EPS (推算值)
+            df_per['historical_eps'] = df_per['close'] / df_per['PE']
+            
+            # 計算河流圖倍數 (通常以該股歷史 PE 的分位數計算，這裡示範固定倍數)
+            multiples = [10, 15, 20, 25, 30] 
+            
+            fig_river = go.Figure()
+            
+            # 畫出河流各區帶
+            for m in multiples:
+                fig_river.add_trace(go.Scatter(
+                    x=df_per['date'], 
+                    y=df_per['historical_eps'] * m, # 👈 修正這裡，讓河流動起來
+                    name=f"{m}x PER", 
+                    line=dict(width=0.5), 
+                    stackgroup='one', 
+                    fill='tonexty'
+                ))
+            
+            # 疊加收盤價
+            fig_river.add_trace(go.Scatter(
+                x=df_per['date'], y=df_per['close'],
+                name="收盤價", line=dict(color='white', width=2)
+            ))
+            
+            fig_river.update_layout(
+                template="plotly_dark",
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=20, r=20, t=20, b=20),
+                height=500,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig_river, use_container_width=True)
+            st.caption("註：河流圖可協助判斷股價相對於歷史盈餘倍數的位置。")
+        else:
+            st.info("⚠️ 暫無該股的基本面資料")
+            
+    except Exception as e:
+        st.error(f"河流圖載入失敗: {e}")
+
+with tab_comparison:
+    st.subheader("⚖️ 同業動態績效比較")
+    
+    try:
+        # 1. 獲取當前個股資訊
+        target_stock = yf.Ticker(ticker_input)
+        sector = target_stock.info.get('sector', 'Unknown')
+        industry = target_stock.info.get('industry', 'Unknown')
+        
+        st.write(f"🔍 偵測到產業分類：**{industry}**")
+
+        # 2. 建立動態比較清單 (提供一些預設值)
+        default_peers = ["0050.TW", "2330.TW", "2317.TW"] # 基礎對照組
+        
+        # 讓使用者可以動態增加代號
+        compare_targets = st.multiselect(
+            "新增要比較的代號 (例如: 2454.TW, 2303.TW)",
+            options=["0050.TW", "0056.TW", "2330.TW", "2317.TW", "2454.TW", "2382.TW"],
+            default=[ticker_input] + (["0050.TW"] if ticker_input != "0050.TW" else [])
+        )
+
+        if compare_targets:
+            # 抓取資料 (最近半年)
+            comp_data = yf.download(compare_targets, period="6mo", interval="1d")['Close']
+            
+            # 歸一化處理 (Normalization)
+            comp_norm = (comp_data / comp_data.iloc[0]) * 100
+            
+            fig_comp = go.Figure()
+            for col in comp_norm.columns:
+                is_self = col == ticker_input
+                fig_comp.add_trace(go.Scatter(
+                    x=comp_norm.index, 
+                    y=comp_norm[col],
+                    name=col,
+                    line=dict(width=3 if is_self else 1.5),
+                    opacity=1 if is_self else 0.7
+                ))
+            
+            fig_comp.update_layout(
+                title=f"自起始日後的累積報酬率 (%)",
+                template="plotly_dark",
+                hovermode="x unified",
+                yaxis_title="績效 (起始為100)",
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)'
+            )
+            st.plotly_chart(fig_comp, use_container_width=True)
+            
+            # --- 額外 Bonus：績效排行榜 ---
+            st.write("🏆 **期間績效排行**")
+            last_perf = comp_norm.iloc[-1].sort_values(ascending=False)
+            perf_cols = st.columns(len(last_perf))
+            for i, (name, val) in enumerate(last_perf.items()):
+                perf_cols[i].metric(name, f"{val:.1f}%", f"{val-100:.1f}%")
+
+    except Exception as e:
+        st.error(f"動態比較載入失敗 (可能因 yfinance info 限制): {e}")
+        st.info("💡 建議：請在上方多選框手動輸入代號進行比較。")
+        
