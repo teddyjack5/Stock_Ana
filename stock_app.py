@@ -1424,8 +1424,23 @@ with tab_fundamental:
             
             if not df_combined.empty:
                 # 確保 PE 大於 0 才計算
-                df_combined = df_combined[df_combined['pe_ratio'] > 0]
-                df_combined['hist_eps'] = df_combined['close_from_yf'] / df_combined['pe_ratio']
+                per_col = None
+
+                if 'pe_ratio' in df_combined.columns:
+                    per_col = 'pe_ratio'
+                elif 'PER' in df_combined.columns:
+                    per_col = 'PER'
+
+                if per_col is None:
+                    st.error("❌ 找不到 PER 欄位")
+                    st.stop()
+
+                # 過濾與計算
+                df_combined = df_combined[df_combined[per_col] > 0]
+
+                df_combined['hist_eps'] = (
+                    df_combined['close_from_yf'] / df_combined[per_col]
+                )
                 
                 # 3. 繪圖
                 multiples = [10, 15, 20, 25, 30] 
