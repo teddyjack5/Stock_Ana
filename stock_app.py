@@ -7,6 +7,7 @@ import os
 import hashlib
 import requests
 import time
+import re
 from datetime import datetime, timedelta
 from FinMind.data import DataLoader
 from plotly.subplots import make_subplots
@@ -1309,8 +1310,8 @@ with tab_news:
         st.subheader("📰 台灣產經新聞")
 
         try:
+            # 1. 整理代號與關鍵字對照
             stock_code = ticker_input.split('.')[0]
-            # 👉 建議：將這個 Mapping 移到外部或讀取 JSON 檔
             stock_map = {
                 "2330": ["台積電", "TSMC", "半導體"],
                 "2356": ["英業達", "Inventec", "電子代工"],
@@ -1321,45 +1322,35 @@ with tab_news:
             if stock_code in stock_map:
                 keywords += stock_map[stock_code]
 
-            all_news = []
-            for kw in keywords:
-                df_tmp = fetch_news_data_cached(kw)
-                if df_tmp is not None and not df_tmp.empty:
-                    all_news.append(df_tmp)
+            # =============================================================
+            # ✅ 核心修正：直接呼叫一次，傳入「代碼」與「關鍵字清單」兩個參數！
+            # =============================================================
+            df_news = fetch_news_data_cached(stock_code, keywords)
 
-            if all_news:
-                df_news = pd.concat(all_news, ignore_index=True)
-            else:
-                df_news = pd.DataFrame()
-
-            # --- Fallback 機制 ---
+            # =============================
+            # 🔄 Fallback (如果該股完全沒新聞，改抓產業大盤新聞)
+            # =============================
             if df_news.empty:
                 st.warning("⚠️ 個股新聞較少，改為顯示產業新聞")
                 fallback_keywords = ["台股", "半導體", "電子產業"]
-                for kw in fallback_keywords:
-                    df_tmp = fetch_news_data_cached(kw)
-                    if df_tmp is not None and not df_tmp.empty:
-                        df_news = df_tmp
-                        break
+                # 傳入大盤虛擬代碼 "TSE" 與產業關鍵字
+                df_news = fetch_news_data_cached("TSE", fallback_keywords)
 
+            # =============================
+            # 🎨 UI 呈現 (對齊你快取輸出的欄位)
+            # =============================
             if not df_news.empty:
-                # 強化去重：針對標題進行空白處理再比對
-                df_news['title_clean'] = df_news['title'].str.replace(r'\s+', '', regex=True)
-                df_news = df_news.drop_duplicates(subset=['title_clean'], keep='first')
+                # 再次做個保險的去重
+                df_news = df_news.drop_duplicates(subset=['title'], keep='first')
 
-                if 'date' in df_news.columns:
-                    df_news = df_news.sort_values(by='date', ascending=False)
-
-                for _, row in df_news.head(8).iterrows():
-                    date_val = row.get('date', '')
-                    date_str = date_val[:10]
-                    
-                    # 🔥 增加：如果是今天的新聞，標註 NEW
-                    is_today = "🔴 NEW" if date_str == datetime.now().strftime('%Y-%m-%d') else ""
-                    
+                # 顯示前 10 筆新聞
+                for _, row in df_news.head(10).iterrows():
+                    # ⚠️ 配合你的 Cache 輸出格式：欄位為 datetime, title, url, source
+                    date_val = str(row.get('datetime', ''))
+                    date_str = date_val[:10] if date_val else "無日期"
                     title = row.get('title', '無標題')
-                    summary = row.get('summary', '無摘要')
-                    link = row.get('link', '#')
+                    source = row.get('source', '未知來源')
+                    link = row.get('url', '#')  # 👈 修正：你的快取欄位是 'url'，不是 'link'
 
                     st.markdown(f"""
                     <div style="
@@ -1367,23 +1358,20 @@ with tab_news:
                         border:1px solid #2A2E39;
                         border-radius:10px;
                         padding:12px;
-                        margin-bottom:10px;
-                        transition: 0.3s;
+                        margin-bottom:8px;
                     ">
                         <p style="color:#9BA3AF; font-size:12px; margin:0;">
-                            {date_str} <span style="color:#FF4B4B; font-weight:bold; margin-left:10px;">{is_today}</span>
+                            📅 {date_str} | 來源: <span style="color:#4FC3F7;">{source}</span>
                         </p>
-                        <p style="color:white; font-size:15px; font-weight:bold; margin:5px 0;">
+                        <p style="color:white; font-size:14px; font-weight:bold; margin:6px 0;">
                             {title}
                         </p>
-                        <p style="color:#9BA3AF; font-size:13px; line-height:1.5;">
-                            {summary[:100]}...
-                        </p>
-                        <a href="{link}" target="_blank" style="color:#2962ff; text-decoration:none; font-size:13px;">
-                            閱讀完整新聞內容 →
+                        <a href="{link}" target="_blank" style="color:#2962ff; font-size:13px; text-decoration:none; font-weight:bold;">
+                            閱讀完整新聞 →
                         </a>
                     </div>
                     """, unsafe_allow_html=True)
+
             else:
                 st.info("⚠️ 目前沒有相關新聞資料")
 
