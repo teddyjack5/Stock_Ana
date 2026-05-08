@@ -225,6 +225,40 @@ def fetch_news_data_cached(stock_code, keywords):
         return df_all
 
     return pd.DataFrame()
+
+# ==============================================================================
+# 🔍 1. 定義抓取台指期資料的函數 (設定 10 分鐘快取)
+# ==============================================================================
+@st.cache_data(ttl=600)  # 👈 核心：每 600 秒自動失效並重新抓取
+def fetch_tx_futures_data():
+    """
+    抓取台指期近月合約資料。
+    yfinance 代號通常為 'WTX=F' (台指期近月)
+    """
+    try:
+        # 抓取最近兩天的資料以計算漲跌
+        ticker = yf.Ticker("WTX=F")
+        df = ticker.history(period="2d", interval="1m") # 抓取 1 分鐘 K 線
+        
+        if df.empty:
+            return None
+            
+        current_price = df['Close'].iloc[-1]
+        prev_close = df['Close'].iloc[0] # 這裡的取法視盤後邏輯可調整
+        change = current_price - prev_close
+        change_pct = (change / prev_close) * 100
+        update_time = df.index[-1].strftime('%Y-%m-%d %H:%M:%S')
+        
+        return {
+            "price": current_price,
+            "change": change,
+            "change_pct": change_pct,
+            "time": update_time,
+            "df": df
+        }
+    except Exception as e:
+        st.error(f"期貨資料抓取失敗: {e}")
+        return None
 # 初始化 DataLoader (用於其他未快取的輕量操作)
 dl = DataLoader()
 
@@ -725,8 +759,8 @@ show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
 # ==============================================================================
 # 【新增 UI 優化】 - st.tabs 模組化分頁架構
 # ==============================================================================
-tab_portfolio, tab_analysis,  tab_news, tab_fundamental, tab_comparison = st.tabs([
-    "🏢 庫存總覽", "📈 個股深度分析",  "📰 產經動態", "💎 基本面河流圖", "⚖️ 同業比較"
+tab_portfolio, tab_analysis,  tab_news, tab_fundamental, tab_comparison, tab_futures = st.tabs([
+    "🏢 庫存總覽", "📈 個股深度分析",  "📰 產經動態", "💎 基本面河流圖", "⚖️ 同業比較","🌙 台指期盤後即時追蹤"
 ])
 
 # ==============================================================================
@@ -1572,5 +1606,49 @@ with tab_comparison:
             else:
                 st.warning("⚠️ 找不到輸入的代號資料，請確認格式是否正確 (例如：2330.TW)")
 
-        except Exception as e:
             st.error(f"繪圖發生錯誤: {e}")
+
+with tab_futures:
+    st.subheader("🌙 台指期盤後即時追蹤")
+    
+    # 執行抓取
+    tx_data = fetch_tx_futures_data()
+    
+    if tx_data:
+        # 顯示即時數據卡片
+        c1, c2, c3 = st.columns(3)
+        
+        # 根據漲跌決定顏色
+        color = "normal" if tx_data['change'] == 0 else "inverse" if tx_data['change'] > 0 else "off"
+        
+        c1.metric("當前點數", f"{tx_data['price']:.0f}")
+        c2.metric("漲跌點數", f"{tx_data['change']:.0f}", delta_color=color)
+        c3.metric("漲跌幅", f"{tx_data['change_pct']:.2f}%", delta=f"{tx_data['change_pct']:.2f}%")
+        
+        st.caption(f"🕒 最後更新時間 (每10分鐘更新一次): {tx_data['time']}")
+        
+        # 繪製簡單的走勢圖
+        fig_tx = go.Figure(data=[go.Scatter(
+            x=tx_data['df'].index, 
+            y=tx_data['df']['Close'],
+            line=dict(color='#00FFCC', width=2),
+            fill='tozeroy',
+            fillcolor='rgba(0, 255, 204, 0.1)'
+        )])
+        
+        fig_tx.update_layout(
+            title="近兩日走勢圖 (1分鐘線)",
+            template="plotly_dark",
+            xaxis_title="時間",
+            yaxis_title="點數",
+            margin=dict(l=0, r=0, t=30, b=0),
+            height=300
+        )
+        st.plotly_chart(fig_tx, use_container_width=True)
+        
+        # 提示訊息
+        st.info("💡 小提醒：台指期盤後交易時間為 15:00 至次日 05:00。本資料由 yfinance 提供，可能有 15 分鐘延遲。")
+    else:
+        st.warning("⚠️ 暫時無法取得期貨資料，請確認市場是否在交易時段或稍後再試。")
+
+
