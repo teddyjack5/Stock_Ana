@@ -1384,62 +1384,85 @@ with tab_fundamental:
     try:
         stock_id = ticker_input.split('.')[0]
         dl = DataLoader()
+        
+        # 登入相容性處理
         if "FINMIND_TOKEN" in st.secrets:
             token = st.secrets["FINMIND_TOKEN"]
-            if hasattr(dl, 'login'):
-                dl.login(token=token)
-            elif hasattr(dl, 'set_token'):
-                dl.set_token(token=token)
-            else:
-                dl.token = token
-        
-        # 抓取最近 3 年的 PER 資料
+            if hasattr(dl, 'login'): dl.login(token=token)
+            elif hasattr(dl, 'set_token'): dl.set_token(token=token)
+            else: dl.token = token
+
+        # 1. 抓取 PE 資料
         df_per = dl.taiwan_stock_per_pbr(
             stock_id=stock_id,
             start_date=(datetime.now() - timedelta(days=365*3)).strftime('%Y-%m-%d')
         )
         
         if not df_per.empty:
-            # 取得目前的 EPS (推算值)
-            df_per['historical_eps'] = df_per['close'] / df_per['PE']
+            # --- 💡 核心修正：處理欄位缺失問題 ---
+            # 將日期轉為 datetime 格式方便合併
+            df_per['date'] = pd.to_datetime(df_per['date'])
             
-            # 計算河流圖倍數 (通常以該股歷史 PE 的分位數計算，這裡示範固定倍數)
+            # 如果 FinMind 沒有 close 欄位，我們從你原本就有的 yfinance data 拿
+            # 假設你之前的 yfinance 資料變數名稱是 'data'
+            if 'close' not in df_per.columns and 'Close' not in df_per.columns:
+                # 從 yfinance 的 data 提取日期與收盤價
+                price_df = data[['Close']].reset_index()
+                price_df.columns = ['date', 'close_from_yf']
+                # 合併兩份資料
+                df_combined = pd.merge(df_per, price_df, on='date', how='inner')
+                main_price_col = 'close_from_yf'
+            else:
+                # 判斷大小寫並統一欄位名
+                main_price_col = 'close' if 'close' in df_per.columns else 'Close'
+                df_combined = df_per
+
+            # 2. 計算歷史 EPS (收盤價 / PE)
+            # 確保 PE 大於 0 才計算，避免無限大
+            df_combined = df_combined[df_combined['PE'] > 0]
+            df_combined['hist_eps'] = df_combined[main_price_col] / df_combined['PE']
+            
+            # 3. 繪圖
             multiples = [10, 15, 20, 25, 30] 
-            
             fig_river = go.Figure()
             
-            # 畫出河流各區帶
             for m in multiples:
                 fig_river.add_trace(go.Scatter(
-                    x=df_per['date'], 
-                    y=df_per['historical_eps'] * m, # 👈 修正這裡，讓河流動起來
+                    x=df_combined['date'], 
+                    y=df_combined['hist_eps'] * m, 
                     name=f"{m}x PER", 
-                    line=dict(width=0.5), 
-                    stackgroup='one', 
+                    line=dict(width=0.5),
+                    stackgroup='one',
                     fill='tonexty'
                 ))
             
-            # 疊加收盤價
+            # 疊加實際股價
             fig_river.add_trace(go.Scatter(
-                x=df_per['date'], y=df_per['close'],
-                name="收盤價", line=dict(color='white', width=2)
+                x=df_combined['date'], 
+                y=df_combined[main_price_col],
+                name="實際股價", 
+                line=dict(color='#FF4B4B', width=2)
             ))
             
             fig_river.update_layout(
                 template="plotly_dark",
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=20, r=20, t=20, b=20),
-                height=500,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                xaxis_title="日期",
+                yaxis_title="股價",
+                hovermode="x unified"
             )
             st.plotly_chart(fig_river, use_container_width=True)
-            st.caption("註：河流圖可協助判斷股價相對於歷史盈餘倍數的位置。")
+            
         else:
-            st.info("⚠️ 暫無該股的基本面資料")
+            st.info("⚠️ FinMind 暫無該股之 PER 歷史資料")
             
     except Exception as e:
-        st.error(f"河流圖載入失敗: {e}")
+        # 如果報錯，把錯誤原因印出來方便 debug
+        st.error(f"河流圖載入失敗: {str(e)}")
+        # 選項：顯示目前 df_per 的欄位名稱，幫你確認問題
+        if 'df_per' in locals() and not df_per.empty:
+            st.write("目前的資料欄位有:", list(df_per.columns))
 
 with tab_comparison:
     st.subheader("⚖️ 同業動態績效比較")
