@@ -1380,7 +1380,8 @@ with tab_news:
 
 with tab_fundamental:
     st.subheader("💎 本益比河流圖 (Valuation Bands)")
-    
+    st.write("df_per columns:", df_per.columns)
+    st.write("df_combined columns:", df_combined.columns)
     try:
         stock_id = ticker_input.split('.')[0]
         dl = DataLoader()
@@ -1422,8 +1423,8 @@ with tab_fundamental:
             
             if not df_combined.empty:
                 # 確保 PE 大於 0 才計算
-                df_combined = df_combined[df_combined['PE'] > 0]
-                df_combined['hist_eps'] = df_combined['close_from_yf'] / df_combined['PE']
+                df_combined = df_combined[df_combined['pe_ratio'] > 0]
+                df_combined['hist_eps'] = df_combined['close_from_yf'] / df_combined['pe_ratio']
                 
                 # 3. 繪圖
                 multiples = [10, 15, 20, 25, 30] 
