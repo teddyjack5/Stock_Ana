@@ -1557,7 +1557,7 @@ with tab_comparison:
 
                 st.plotly_chart(fig_comp, use_container_width=True)
                 
-                # --- 4. 績效排行榜 (修正紅漲綠跌邏輯) ---
+                # --- 4. 績效排行榜  ---
                 st.write(f"🏆 **{time_period} 績效排行 (紅漲綠跌模式)**")
                 last_perf = comp_norm.iloc[-1].sort_values(ascending=False)
                 
