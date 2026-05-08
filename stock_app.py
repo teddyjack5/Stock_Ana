@@ -226,112 +226,6 @@ def fetch_news_data_cached(stock_code, keywords):
 
     return pd.DataFrame()
 
-# ==============================================================================
-# 🔍 1. 定義抓取台指期資料的函數 (設定 10 分鐘快取)
-# ==============================================================================
-@st.cache_data(ttl=600)  # 每10分鐘更新
-def fetch_wantgoo_tx():
-
-    url = "https://www.wantgoo.com/futures/wtxp&"
-
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept-Language": "zh-TW,zh;q=0.9"
-    }
-
-    try:
-        res = requests.get(url, headers=headers, timeout=10)
-
-        if res.status_code != 200:
-            return None
-
-        html = res.text
-
-        # 👉 這裡用最穩定的方式：抓「最新價格」關鍵字
-        import re
-
-        # 抓最新價（會抓到像 18532 這種）
-        price_match = re.search(r'(\d{4,5})\s*<', html)
-
-        if not price_match:
-            return None
-
-        price = float(price_match.group(1))
-
-        # 👉 簡單抓漲跌（不保證每次都有）
-        change_match = re.search(r'([+-]\d+\.?\d*)', html)
-
-        change = float(change_match.group(1)) if change_match else 0
-
-        change_pct = round(change / price * 100, 2)
-
-        return {
-            "source": "WantGoo",
-            "price": price,
-            "change": change,
-            "change_pct": change_pct,
-            "time": datetime.now().strftime('%H:%M')
-        }
-
-    except Exception as e:
-        print("WantGoo error:", e)
-        return None
-
-def fetch_fallback():
-
-    try:
-        df = yf.Ticker("NQ=F").history(period="1d", interval="5m")
-
-        if df.empty:
-            return None
-
-        price = df['Close'].iloc[-1]
-        prev = df['Close'].iloc[0]
-
-        change = price - prev
-        pct = (change / prev) * 100
-
-        return {
-            "source": "NASDAQ期貨",
-            "price": round(price, 2),
-            "change": round(change, 2),
-            "change_pct": round(pct, 2),
-            "time": df.index[-1].strftime('%H:%M')
-        }
-
-    except:
-        return None
-
-@st.cache_data(ttl=600)
-def get_night_market():
-
-    data = fetch_wantgoo_tx()
-
-    if data:
-        return data
-
-    # 👉 fallback
-    data = fetch_fallback()
-
-    return data
-
-def predict_open(data):
-
-    if not data:
-        return "無法判斷", "#999"
-
-    pct = data["change_pct"]
-
-    if pct > 1.0:
-        return "🔥 強多開盤", "#00E676"
-    elif pct > 0.3:
-        return "📈 偏多開盤", "#4CAF50"
-    elif pct > -0.3:
-        return "⚖️ 震盪開盤", "#FFC107"
-    elif pct > -1.0:
-        return "📉 偏空開盤", "#FF9800"
-    else:
-        return "❄️ 強空開盤", "#FF5252"
 # 初始化 DataLoader (用於其他未快取的輕量操作)
 dl = DataLoader()
 
@@ -832,8 +726,8 @@ show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
 # ==============================================================================
 # 【新增 UI 優化】 - st.tabs 模組化分頁架構
 # ==============================================================================
-tab_portfolio, tab_analysis,  tab_news, tab_fundamental, tab_comparison, tab_futures = st.tabs([
-    "🏢 庫存總覽", "📈 個股深度分析",  "📰 產經動態", "💎 基本面河流圖", "⚖️ 同業比較","🌙 台指期盤後即時追蹤"
+tab_portfolio, tab_analysis,  tab_news, tab_fundamental, tab_comparison = st.tabs([
+    "🏢 庫存總覽", "📈 個股深度分析",  "📰 產經動態", "💎 基本面河流圖", "⚖️ 同業比較"
 ])
 
 # ==============================================================================
@@ -1596,37 +1490,31 @@ with tab_fundamental:
 with tab_comparison:
     st.subheader("⚖️ 同業動態績效比較")
     
-    # 1. 確保初始化：只在第一次執行時設定預設值
+    # 1. 確保初始化
     if 'comparison_selector' not in st.session_state:
         st.session_state.comparison_selector = [ticker_input] + (["0050.TW"] if ticker_input != "0050.TW" else [])
 
-    # 2. 定義增加股票的 Callback function
-    # 這是最穩定的做法：在輸入框變動時，直接更新 multiselect 綁定的那個 key
+    # 2. Callback function
     def handle_add_stock():
         new_code = st.session_state.new_stock_input.upper().strip()
         if new_code:
-            # 取得目前 multiselect 裡已經選好的代號
             current_selection = list(st.session_state.comparison_selector)
             if new_code not in current_selection:
                 current_selection.append(new_code)
-                # 重要：直接更新 multiselect 的 key 值
                 st.session_state.comparison_selector = current_selection
-        # 清空輸入框
         st.session_state.new_stock_input = ""
 
-    # 3. 手動輸入框 (使用 on_change 直接觸發邏輯)
+    # 3. 手動輸入框
     st.text_input("➕ 新增比較代號 (輸入後按 Enter)", 
-                 key="new_stock_input", 
-                 on_change=handle_add_stock,
-                 placeholder="例如: 2454.TW")
+                  key="new_stock_input", 
+                  on_change=handle_add_stock,
+                  placeholder="例如: 2454.TW")
 
-    # 4. 準備選項：基礎選項 + 目前已經選中的內容
-    # 注意：options 必須包含「目前選中的所有代號」，否則標籤會消失
+    # 4. 準備選項
     base_options = ["0050.TW", "2330.TW", "2317.TW", "0056.TW"]
     all_options = sorted(list(set(base_options + st.session_state.comparison_selector)))
 
-    # 5. 多選框：關鍵在於只用 key，不要傳入 default
-    # 這樣它會完全依照 st.session_state.comparison_selector 的內容來顯示
+    # 5. 多選框
     compare_targets = st.multiselect(
         "目前比較對象 (可點擊 x 移除)",
         options=all_options,
@@ -1636,18 +1524,14 @@ with tab_comparison:
     # 6. 開始繪圖邏輯
     if compare_targets:
         try:
-            # 抓取資料
             comp_data = yf.download(compare_targets, period="6mo", interval="1d")['Close']
             
             if not comp_data.empty:
-                # 數據歸一化 (以第一天為 100)
                 comp_norm = (comp_data / comp_data.iloc[0]) * 100
                 
                 fig_comp = go.Figure()
                 
-                # 處理單支或多支股票的情況
                 if isinstance(comp_norm, pd.Series):
-                    # 只有一支股票時，轉成 DataFrame 方便處理
                     comp_norm = comp_norm.to_frame()
 
                 for col in comp_norm.columns:
@@ -1657,78 +1541,59 @@ with tab_comparison:
                         y=comp_norm[col], 
                         name=col,
                         line=dict(width=3 if is_self else 1.5),
-                        opacity=1 if is_self else 0.8
+                        opacity=1 if is_self else 0.8,
+                        # TradingView 習慣在滑鼠移過時顯示圓點
+                        mode='lines'
                     ))
                 
+                # 🛠️ TradingView 風格佈局優化
                 fig_comp.update_layout(
                     title="累積報酬率比較 (%) - 起始點為 100",
                     template="plotly_dark",
                     hovermode="x unified",
-                    yaxis_title="績效 (%)",
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)'
+                    # 設定背景為 TradingView 招牌的深灰色
+                    paper_bgcolor='#131722',
+                    plot_bgcolor='#131722',
+                    # 網格線顏色調淡
+                    xaxis=dict(gridcolor='#2A2E39', zeroline=False),
+                    yaxis=dict(gridcolor='#2A2E39', zeroline=False),
+                    # 字體與圖例優化
+                    legend=dict(bgcolor='rgba(0,0,0,0)', font=dict(size=10)),
+                    margin=dict(l=0, r=0, t=50, b=0),
+                    # 十字線 (Crosshair)
+                    hoverlabel=dict(bgcolor="#2A2E39", font_size=12)
                 )
+                
+                # 增加十字線效果
+                fig_comp.update_xaxes(showspikes=True, spikecolor="gray", spikesnap="cursor", spikemode="across")
+                fig_comp.update_yaxes(showspikes=True, spikecolor="gray", spikesnap="cursor", spikemode="across")
+
                 st.plotly_chart(fig_comp, use_container_width=True)
                 
-                # 績效排行榜
-                st.write("🏆 **期間績效排行**")
+                # 🚀 績效排行榜 - 台灣紅漲綠跌邏輯
+                st.write("🏆 **期間績效排行 (紅漲綠跌模式)**")
                 last_perf = comp_norm.iloc[-1].sort_values(ascending=False)
                 perf_cols = st.columns(len(last_perf))
+                
                 for i, (name, val) in enumerate(last_perf.items()):
-                    perf_cols[i].metric(name, f"{val:.1f}%", f"{val-100:.1f}%")
+                    # 計算淨報酬率
+                    net_return = val - 100
+                    
+                    # 🔴 台灣模式：漲是紅色，跌是綠色
+                    # 注意：Streamlit 的 delta_color="normal" 是「漲綠跌紅」
+                    # 所以我們要手動判斷顏色，漲的時候給 "inverse" (在台灣設定下會變紅)
+                    # 或者更直接的做法是直接定義 delta 顏色邏輯
+                    
+                    color_logic = "inverse" if net_return > 0 else "normal" if net_return < 0 else "off"
+                    
+                    perf_cols[i].metric(
+                        label=name, 
+                        value=f"{val:.1f}%", 
+                        delta=f"{net_return:+.1f}%",
+                        delta_color=color_logic
+                    )
             else:
-                st.warning("⚠️ 找不到輸入的代號資料，請確認格式是否正確 (例如：2330.TW)")
+                st.warning("⚠️ 找不到輸入的代號資料")
 
         except Exception as e:  
             st.error(f"繪圖發生錯誤: {e}")
-
-with tab_futures:
-    st.subheader("🌙 台指期盤後即時追蹤")
-    
-    st.markdown('<div class="section-title">🌙 台指期夜盤</div>', unsafe_allow_html=True)
-
-    data = get_night_market()
-
-    if data:
-
-        trend_text, trend_color = predict_open(data)
-
-        c1, c2, c3 = st.columns(3)
-
-        # 價格
-        c1.markdown(f"""
-        <div class="card">
-            <div class="metric-title">目前指數</div>
-            <div class="metric-value">{data['price']}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # 漲跌
-        color = "up" if data['change'] > 0 else "down"
-
-        c2.markdown(f"""
-        <div class="card">
-            <div class="metric-title">漲跌</div>
-            <div class="metric-value {color}">
-                {data['change']} ({data['change_pct']}%)
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # 預測
-        c3.markdown(f"""
-        <div class="card">
-            <div class="metric-title">隔日預測</div>
-            <div style="color:{trend_color}; font-size:20px;">
-                {trend_text}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.caption(f"來源：{data['source']} | 更新時間：{data['time']}")
-    
-    else:
-        st.error("❌ 無法取得夜盤資料")
-
-
-
