@@ -1380,8 +1380,7 @@ with tab_news:
 
 with tab_fundamental:
     st.subheader("💎 本益比河流圖 (Valuation Bands)")
-    st.write("df_per columns:", df_per.columns)
-    st.write("df_combined columns:", df_combined.columns)
+    
     try:
         stock_id = ticker_input.split('.')[0]
         dl = DataLoader()
@@ -1420,6 +1419,8 @@ with tab_fundamental:
 
             # 2. 合併兩份資料
             df_combined = pd.merge(df_per, price_df, on='date', how='inner')
+            st.write("df_per columns:", df_per.columns)
+            st.write("df_combined columns:", df_combined.columns)
             
             if not df_combined.empty:
                 # 確保 PE 大於 0 才計算
