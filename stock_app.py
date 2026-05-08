@@ -230,43 +230,108 @@ def fetch_news_data_cached(stock_code, keywords):
 # 🔍 1. 定義抓取台指期資料的函數 (設定 10 分鐘快取)
 # ==============================================================================
 @st.cache_data(ttl=600)  # 每10分鐘更新
-def fetch_tw_futures_night():
+def fetch_wantgoo_tx():
 
-    import yfinance as yf
-    import pandas as pd
-    from datetime import datetime
+    url = "https://www.wantgoo.com/futures/wtxp"
 
-    symbols = ["WTX=F", "TX=F", "TW=F"]  # 🔥 多來源備援
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept-Language": "zh-TW,zh;q=0.9"
+    }
 
-    for sym in symbols:
-        try:
-            ticker = yf.Ticker(sym)
-            df = ticker.history(period="1d", interval="1m")
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
 
-            if df is not None and not df.empty:
+        if res.status_code != 200:
+            return None
 
-                # 🔥 取最新價
-                current_price = df['Close'].iloc[-1]
+        html = res.text
 
-                # 🔥 用當日第一筆當基準（夜盤用這個比較合理）
-                open_price = df['Close'].iloc[0]
+        # 👉 這裡用最穩定的方式：抓「最新價格」關鍵字
+        import re
 
-                change = current_price - open_price
-                change_pct = (change / open_price) * 100
+        # 抓最新價（會抓到像 18532 這種）
+        price_match = re.search(r'(\d{4,5})\s*<', html)
 
-                return {
-                    "symbol": sym,
-                    "price": round(current_price, 2),
-                    "change": round(change, 2),
-                    "change_pct": round(change_pct, 2),
-                    "time": df.index[-1].strftime('%Y-%m-%d %H:%M'),
-                    "df": df
-                }
+        if not price_match:
+            return None
 
-        except:
-            continue
+        price = float(price_match.group(1))
 
-    return None
+        # 👉 簡單抓漲跌（不保證每次都有）
+        change_match = re.search(r'([+-]\d+\.?\d*)', html)
+
+        change = float(change_match.group(1)) if change_match else 0
+
+        change_pct = round(change / price * 100, 2)
+
+        return {
+            "source": "WantGoo",
+            "price": price,
+            "change": change,
+            "change_pct": change_pct,
+            "time": datetime.now().strftime('%H:%M')
+        }
+
+    except Exception as e:
+        print("WantGoo error:", e)
+        return None
+
+def fetch_fallback():
+
+    try:
+        df = yf.Ticker("NQ=F").history(period="1d", interval="5m")
+
+        if df.empty:
+            return None
+
+        price = df['Close'].iloc[-1]
+        prev = df['Close'].iloc[0]
+
+        change = price - prev
+        pct = (change / prev) * 100
+
+        return {
+            "source": "NASDAQ期貨",
+            "price": round(price, 2),
+            "change": round(change, 2),
+            "change_pct": round(pct, 2),
+            "time": df.index[-1].strftime('%H:%M')
+        }
+
+    except:
+        return None
+
+@st.cache_data(ttl=600)
+def get_night_market():
+
+    data = fetch_wantgoo_tx()
+
+    if data:
+        return data
+
+    # 👉 fallback
+    data = fetch_fallback()
+
+    return data
+
+def predict_open(data):
+
+    if not data:
+        return "無法判斷", "#999"
+
+    pct = data["change_pct"]
+
+    if pct > 1.0:
+        return "🔥 強多開盤", "#00E676"
+    elif pct > 0.3:
+        return "📈 偏多開盤", "#4CAF50"
+    elif pct > -0.3:
+        return "⚖️ 震盪開盤", "#FFC107"
+    elif pct > -1.0:
+        return "📉 偏空開盤", "#FF9800"
+    else:
+        return "❄️ 強空開盤", "#FF5252"
 # 初始化 DataLoader (用於其他未快取的輕量操作)
 dl = DataLoader()
 
@@ -1620,44 +1685,47 @@ with tab_comparison:
 with tab_futures:
     st.subheader("🌙 台指期盤後即時追蹤")
     
-    # 執行抓取
-    tx_data = fetch_tw_futures_night()
-    
-    if tx_data:
-        # 顯示即時數據卡片
+    st.markdown('<div class="section-title">🌙 台指期夜盤</div>', unsafe_allow_html=True)
+
+    data = get_night_market()
+
+    if data:
+
+        trend_text, trend_color = predict_open(data)
+
         c1, c2, c3 = st.columns(3)
-        
-        # 根據漲跌決定顏色
-        color = "normal" if tx_data['change'] == 0 else "inverse" if tx_data['change'] > 0 else "off"
-        
-        c1.metric("當前點數", f"{tx_data['price']:.0f}")
-        c2.metric("漲跌點數", f"{tx_data['change']:.0f}", delta_color=color)
-        c3.metric("漲跌幅", f"{tx_data['change_pct']:.2f}%", delta=f"{tx_data['change_pct']:.2f}%")
-        
-        st.caption(f"🕒 最後更新時間 (每10分鐘更新一次): {tx_data['time']}")
-        
-        # 繪製簡單的走勢圖
-        fig_tx = go.Figure(data=[go.Scatter(
-            x=tx_data['df'].index, 
-            y=tx_data['df']['Close'],
-            line=dict(color='#00FFCC', width=2),
-            fill='tozeroy',
-            fillcolor='rgba(0, 255, 204, 0.1)'
-        )])
-        
-        fig_tx.update_layout(
-            title="近兩日走勢圖 (1分鐘線)",
-            template="plotly_dark",
-            xaxis_title="時間",
-            yaxis_title="點數",
-            margin=dict(l=0, r=0, t=30, b=0),
-            height=300
-        )
-        st.plotly_chart(fig_tx, use_container_width=True)
-        
-        # 提示訊息
-        st.info("💡 小提醒：台指期盤後交易時間為 15:00 至次日 05:00。本資料由 yfinance 提供，可能有 15 分鐘延遲。")
-    else:
-        st.warning("⚠️ 暫時無法取得期貨資料，請確認市場是否在交易時段或稍後再試。")
 
+        # 價格
+        c1.markdown(f"""
+        <div class="card">
+            <div class="metric-title">目前指數</div>
+            <div class="metric-value">{data['price']}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
+        # 漲跌
+        color = "up" if data['change'] > 0 else "down"
+
+        c2.markdown(f"""
+        <div class="card">
+            <div class="metric-title">漲跌</div>
+            <div class="metric-value {color}">
+                {data['change']} ({data['change_pct']}%)
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # 預測
+        c3.markdown(f"""
+        <div class="card">
+            <div class="metric-title">隔日預測</div>
+            <div style="color:{trend_color}; font-size:20px;">
+                {trend_text}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.caption(f"來源：{data['source']} | 更新時間：{data['time']}")
+    
+else    :
+        st.error("❌ 無法取得夜盤資料")
