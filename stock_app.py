@@ -232,7 +232,7 @@ def fetch_news_data_cached(stock_code, keywords):
 @st.cache_data(ttl=600)  # 每10分鐘更新
 def fetch_wantgoo_tx():
 
-    url = "https://www.wantgoo.com/futures/wtxp"
+    url = "https://www.wantgoo.com/futures/wtxp&"
 
     headers = {
         "User-Agent": "Mozilla/5.0",
