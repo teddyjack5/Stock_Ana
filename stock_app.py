@@ -1305,65 +1305,87 @@ with tab_analysis:
 # Tab 4: 產經動態 (移入 Tab)
 # ==============================================================================
 with tab_news:
-
     if show_news and ticker_input:
-
-        st.markdown('<div class="section-title">📰 即時新聞</div>', unsafe_allow_html=True)
+        st.subheader("📰 台灣產經新聞")
 
         try:
             stock_code = ticker_input.split('.')[0]
-
-            # =============================
-            # 🔍 關鍵字強化（超重要）
-            # =============================
+            # 👉 建議：將這個 Mapping 移到外部或讀取 JSON 檔
             stock_map = {
                 "2330": ["台積電", "TSMC", "半導體"],
-                "2317": ["鴻海", "Foxconn"],
-                "2454": ["聯發科", "MediaTek"],
-                "2303": ["聯電", "UMC"],
+                "2356": ["英業達", "Inventec", "電子代工"],
+                "2618": ["長榮航", "EVA", "交通空運"]
             }
 
             keywords = [stock_code]
             if stock_code in stock_map:
                 keywords += stock_map[stock_code]
 
-            # =============================
-            # 🚀 抓新聞
-            # =============================
-            df_news = fetch_news_data_cached(stock_code, keywords)
+            all_news = []
+            for kw in keywords:
+                df_tmp = fetch_news_data_cached(kw)
+                if df_tmp is not None and not df_tmp.empty:
+                    all_news.append(df_tmp)
 
-            def clean_html(raw_html):
-                if not raw_html:
-                    return ""
-                clean = re.sub('<.*?>', '', raw_html)
-                return clean
+            if all_news:
+                df_news = pd.concat(all_news, ignore_index=True)
+            else:
+                df_news = pd.DataFrame()
 
-            # =============================
-            # 🎨 UI
-            # =============================
+            # --- Fallback 機制 ---
+            if df_news.empty:
+                st.warning("⚠️ 個股新聞較少，改為顯示產業新聞")
+                fallback_keywords = ["台股", "半導體", "電子產業"]
+                for kw in fallback_keywords:
+                    df_tmp = fetch_news_data_cached(kw)
+                    if df_tmp is not None and not df_tmp.empty:
+                        df_news = df_tmp
+                        break
+
             if not df_news.empty:
+                # 強化去重：針對標題進行空白處理再比對
+                df_news['title_clean'] = df_news['title'].str.replace(r'\s+', '', regex=True)
+                df_news = df_news.drop_duplicates(subset=['title_clean'], keep='first')
+
+                if 'date' in df_news.columns:
+                    df_news = df_news.sort_values(by='date', ascending=False)
 
                 for _, row in df_news.head(8).iterrows():
+                    date_val = row.get('date', '')
+                    date_str = date_val[:10]
+                    
+                    # 🔥 增加：如果是今天的新聞，標註 NEW
+                    is_today = "🔴 NEW" if date_str == datetime.now().strftime('%Y-%m-%d') else ""
+                    
+                    title = row.get('title', '無標題')
+                    summary = row.get('summary', '無摘要')
+                    link = row.get('link', '#')
 
-                    raw_summary = row.get('summary', '')
-
-                    title = clean_html(row.get('title', '無標題'))
-                    summary = clean_html(raw_summary)
-                    link = extract_real_url(raw_summary, row.get('link', '#'))
-                    date_str = str(row.get('date', ''))[:10]
-
-                    html = f"""
-                <div style="background:#131722;border:1px solid #2A2E39;border-radius:10px;padding:12px;margin-bottom:10px;">
-                <div style="color:#9BA3AF;font-size:12px;">{date_str}</div>
-                <div style="color:white;font-size:15px;margin:6px 0;font-weight:500;">{title}</div>
-                <div style="color:#9BA3AF;font-size:13px;margin-bottom:8px;">{summary}</div>
-                <a href="{link}" target="_blank" style="color:#26A69A;font-size:13px;text-decoration:none;">🔗 查看全文</a>
-                </div>
-                """
-                    st.markdown(html, unsafe_allow_html=True)
-
+                    st.markdown(f"""
+                    <div style="
+                        background:#131722;
+                        border:1px solid #2A2E39;
+                        border-radius:10px;
+                        padding:12px;
+                        margin-bottom:10px;
+                        transition: 0.3s;
+                    ">
+                        <p style="color:#9BA3AF; font-size:12px; margin:0;">
+                            {date_str} <span style="color:#FF4B4B; font-weight:bold; margin-left:10px;">{is_today}</span>
+                        </p>
+                        <p style="color:white; font-size:15px; font-weight:bold; margin:5px 0;">
+                            {title}
+                        </p>
+                        <p style="color:#9BA3AF; font-size:13px; line-height:1.5;">
+                            {summary[:100]}...
+                        </p>
+                        <a href="{link}" target="_blank" style="color:#2962ff; text-decoration:none; font-size:13px;">
+                            閱讀完整新聞內容 →
+                        </a>
+                    </div>
+                    """, unsafe_allow_html=True)
             else:
-                st.warning("⚠️ 無新聞資料（已啟用雙來源仍為空，請檢查網路或 API）")
+                st.info("⚠️ 目前沒有相關新聞資料")
 
         except Exception as e:
             st.error(f"新聞模組錯誤：{e}")
