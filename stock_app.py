@@ -75,40 +75,34 @@ def fetch_yf_data_cached(ticker, period=None, interval=None, start=None):
 def fetch_chip_data_cached(stock_id):
     dl_cache = DataLoader()
     
-    # 1. 處理 Token：直接賦值給屬性，避開不存在的 login 方法
+    # 1. 處理 Token
     token = st.secrets.get("FINMIND_TOKEN", "")
     if token:
-        dl_cache.token = token  # 這是目前最通用的作法
+        dl_cache.token = token
     
     # 2. 確保代號正確 (00631L)
     clean_id = stock_id.split('.')[0].upper().strip()
     
     try:
-        # 3. 抓取資料
         df = dl_cache.taiwan_stock_institutional_investors(
             stock_id=clean_id,
             start_date=(datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
         )
 
         if df is None or df.empty:
-            st.warning(f"⚠️ FinMind API 回傳 {clean_id} 的空資料")
             return pd.DataFrame()
 
-        # 4. 關鍵修正：FinMind 的法人欄位名稱是 'Institutional_Investor'
-        # 您的程式碼之前檢查 "name" 會導致報錯，這裡改為檢查正確欄位
-        required_cols = {"date", "Institutional_Investor", "buy", "sell"}
+        # 3. 根據您的診斷結果，將 required_cols 改回 "name"
+        required_cols = {"date", "name", "buy", "sell"}
         
         if not required_cols.issubset(df.columns):
-            st.warning(f"⚠️ 欄位名稱不符。目前欄位: {df.columns.tolist()}")
+            st.warning(f"⚠️ 欄位名稱依舊不符。目前欄位: {df.columns.tolist()}")
             return pd.DataFrame()
 
-        # 5. 重新命名欄位，以符合您後續的繪圖邏輯 (例如您可能習慣用 'name')
-        df = df.rename(columns={'Institutional_Investor': 'name'})
-
+        # 既然欄位已經是 'name' 了，就不用再 rename 了
         return df
 
     except Exception as e:
-        # 這樣就能精確抓到是哪裡出錯
         st.error(f"❌ 籌碼 API 錯誤 ({clean_id}): {str(e)}")
         return pd.DataFrame()
 
