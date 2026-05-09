@@ -74,34 +74,42 @@ def fetch_yf_data_cached(ticker, period=None, interval=None, start=None):
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_chip_data_cached(stock_id):
     dl_cache = DataLoader()
+    
+    # 1. 處理代號：轉大寫並去除可能的點號
+    clean_id = stock_id.split('.')[0].upper().strip()
+    
     try:
         if "FINMIND_TOKEN" in st.secrets:
-            try:
-                # 優先嘗試標準登入方法
-                dl_cache.login(token=st.secrets["FINMIND_TOKEN"])
-            except:
-                # 如果方法不存在，直接強制寫入屬性
-                dl_cache.token = st.secrets["FINMIND_TOKEN"]
+            # 使用標準登入
+            dl_cache.login(token=st.secrets["FINMIND_TOKEN"])
 
+        # 2. 抓取資料
         df = dl_cache.taiwan_stock_institutional_investors(
-            stock_id=stock_id.split('.')[0],
+            stock_id=clean_id,
             start_date=(datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
         )
 
         if df is None or df.empty:
-            st.warning(f"⚠️ FinMind API 回傳 {stock_id} 的空資料")
-            return pd.DataFrame() # 回傳空 DataFrame 而不是 None
-
-        required_cols = {"date", "name", "buy", "sell"}
-        if not required_cols.issubset(df.columns):
-            st.warning(f"⚠️ FinMind 欄位有缺，目前欄位: {df.columns.tolist()}")
+            st.warning(f"⚠️ FinMind API 回傳 {clean_id} 的空資料")
             return pd.DataFrame()
+
+        # 3. 修正欄位檢查邏輯
+        # FinMind 籌碼欄位通常為: date, stock_id, Institutional_Investor, buy, sell
+        # 如果您需要 "name" 欄位來對應法人，請將其加入檢查
+        required_cols = {"date", "Institutional_Investor", "buy", "sell"}
+        
+        if not required_cols.issubset(df.columns):
+            # 診斷用：如果出錯，顯示出 API 到底給了什麼欄位
+            st.warning(f"⚠️ 欄位名稱不符。API回傳: {df.columns.tolist()}")
+            return pd.DataFrame()
+
+        # 4. 為了維持您後續繪圖邏輯的相容性，可以將 Institutional_Investor 重新命名為 name
+        df = df.rename(columns={'Institutional_Investor': 'name'})
 
         return df
 
     except Exception as e:
-        # 顯示在網頁上，不要用 print！因為 print 只會出現在後台終端機
-        st.error(f"❌ 籌碼 API 錯誤 ({stock_id}): {e}")
+        st.error(f"❌ 籌碼 API 錯誤 ({clean_id}): {e}")
         return pd.DataFrame()
 
 def extract_real_url(entry):
