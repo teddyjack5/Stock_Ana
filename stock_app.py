@@ -763,7 +763,7 @@ with tab_portfolio:
             for t_code, info in active_costs.items():
                 try:
                     # 【效能優化】使用快取取代每次都要重新下載
-                    temp_df = fetch_yf_data_cached(t_code, period="5d", interval="1m")
+                    temp_df = fetch_yf_data_cached(t_code, period="5d", interval="1d")
                     
                     if not temp_df.empty:
                         if isinstance(temp_df.columns, pd.MultiIndex):
