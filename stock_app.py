@@ -317,7 +317,7 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def load_stock_pool():
-    conn = st.connection("gsheets", type=GSheetsConnection)
+    #conn = st.connection("gsheets", type=GSheetsConnection)
     df = conn.read(worksheet="stock_pool")
 
     df = df.dropna()
