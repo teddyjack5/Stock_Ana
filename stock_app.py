@@ -318,26 +318,36 @@ def hash_password(password):
 
 def load_stock_pool():
     try:
-        # 建立連線
-        conn = st.connection("gsheets", type=GSheetsConnection)
+        # 1. 取得 spreadsheet ID
+        # 原本網址: https://docs.google.com/spreadsheets/d/1-LpwNnPIQMUQk75HHezxXbLVms6AihcS7g_eE3I955g/edit
+        sheet_id = "1-LpwNnPIQMUQk75HHezxXbLVms6AihcS7g_eE3I955g"
         
-        # 讀取指定分頁，建議檢查分頁名稱是否完全正確（含大小寫與空格）
-        df = conn.read(worksheet="stock_pool")
+        # 2. 取得 stock_pool 的 gid (關鍵步驟！)
+        # 請去瀏覽器看 stock_pool 分頁網址最後面的 gid=xxxxxxx
+        # 假設你的 gid 是 12345678 (請修改下方數字)
+        gid = "1313725012" 
         
-        if df is None or df.empty:
-            st.warning("⚠️ 股票池分頁 'stock_pool' 內容為空")
+        # 3. 構造直接下載 CSV 的連結 (這是 Google Sheet 最穩定的 API 進入點)
+        csv_url = f"https://docs.google.com/spreadsheets/d/1-LpwNnPIQMUQk75HHezxXbLVms6AihcS7g_eE3I955g/edit?gid=1313725012#gid=1313725012"
+        
+        # 4. 直接讀取
+        df = pd.read_csv(csv_url)
+        
+        if df.empty:
+            st.warning("⚠️ 股票池分頁內容為空")
             return []
 
-        # 清理資料：移除空值、轉字串、移除前後空格
-        # 這樣可以防止 "2330 " 這種格式造成 yfinance 抓不到資料
-        stock_list = df['stock_id'].dropna().astype(str).str.strip().tolist()
-        return stock_list
+        # 5. 確保欄位名稱正確
+        if 'stock_id' in df.columns:
+            return df['stock_id'].dropna().astype(str).str.strip().tolist()
+        else:
+            st.error(f"❌ 找不到 'stock_id' 欄位。目前的欄位有：{df.columns.tolist()}")
+            return []
 
     except Exception as e:
-        # 這裡會攔截您遇到的 HTTPError，並以警告方式顯示，而不會讓整個 App 崩潰
-        st.error(f"❌ 讀取 stock_pool 失敗，請確認分頁名稱或權限設定。錯誤: {e}")
-        # 回傳空清單或預設清單，確保後續邏輯能跑下去
-        return []
+        st.error(f"❌ 核心讀取失敗: {e}")
+        # 回傳預設值，確保 AI 選股 Tab 不會整片空白
+        return ["2330", "2454", "2317"
 
 # ==============================================================================
 # 第二部分：【互動對話視窗 (Dialogs)】 - UI 彈窗功能定義
