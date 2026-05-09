@@ -316,6 +316,14 @@ def hash_password(password):
         return None
     return hashlib.sha256(password.encode()).hexdigest()
 
+def load_stock_pool():
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    df = conn.read(worksheet="stock_pool")
+
+    df = df.dropna()
+    stock_list = df['stock_id'].astype(str).tolist()
+    return stock_list
+
 # ==============================================================================
 # 第二部分：【互動對話視窗 (Dialogs)】 - UI 彈窗功能定義
 # ==============================================================================
@@ -728,8 +736,8 @@ show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
 # ==============================================================================
 # 【新增 UI 優化】 - st.tabs 模組化分頁架構
 # ==============================================================================
-tab_portfolio, tab_analysis,  tab_news, tab_fundamental, tab_comparison = st.tabs([
-    "🏢 庫存總覽", "📈 個股深度分析",  "📰 產經動態", "💎 基本面河流圖", "⚖️ 同業比較"
+tab_portfolio, tab_analysis,  tab_news, tab_fundamental, tab_comparison, tab_ai = st.tabs([
+    "🏢 庫存總覽", "📈 個股深度分析",  "📰 產經動態", "💎 基本面河流圖", "⚖️ 同業比較","🤖 AI選股（法人連買排行榜）"
 ])
 
 # ==============================================================================
@@ -1588,3 +1596,204 @@ with tab_comparison:
 
         except Exception as e:  
             st.error(f"繪圖發生錯誤: {e}")
+
+# =============================
+# 🤖 AI選股（完整優化版）
+# =============================
+with tab_ai:
+
+    st.markdown('<div class="section-title">🤖 AI選股（法人連買排行榜）</div>', unsafe_allow_html=True)
+
+    import pandas as pd
+    import yfinance as yf
+    from FinMind.data import DataLoader
+    from datetime import datetime, timedelta
+
+    dl = DataLoader()
+
+    # =============================
+    # 📥 讀股票池（Google Sheet）
+    # =============================
+    @st.cache_data(ttl=600)
+    def load_stock_pool():
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df = conn.read(worksheet="stock_pool")
+        df = df.dropna()
+        return df['stock_id'].astype(str).tolist()
+
+    # =============================
+    # 📥 股票資訊（判斷 TW / TWO）
+    # =============================
+    @st.cache_data(ttl=86400)
+    def load_stock_info():
+        return dl.taiwan_stock_info()
+
+    def get_ticker(stock_id, df_info):
+        row = df_info[df_info['stock_id'] == stock_id]
+        if row.empty:
+            return None
+
+        market = row.iloc[0]['market']
+
+        if market == "TSE":
+            return stock_id + ".TW"
+        elif market == "OTC":
+            return stock_id + ".TWO"
+
+        return None
+
+    # =============================
+    # 📈 價格資料（輕量化）
+    # =============================
+    @st.cache_data(ttl=600)
+    def fetch_price_fast(ticker):
+        df = yf.download(ticker, period="2mo", interval="1d", progress=False)
+        if df.empty:
+            return None
+
+        df['MA20'] = df['Close'].rolling(20).mean()
+        df['RSI'] = 100 - (100 / (1 + df['Close'].pct_change().rolling(14).mean()))
+        df['MACD'] = df['Close'].ewm(span=12).mean() - df['Close'].ewm(span=26).mean()
+        df['Signal'] = df['MACD'].ewm(span=9).mean()
+
+        return df
+
+    # =============================
+    # 👥 法人資料（限制天數加速）
+    # =============================
+    @st.cache_data(ttl=600)
+    def fetch_chip_fast(stock_id):
+        try:
+            df = dl.taiwan_stock_institutional_investors(
+                stock_id=stock_id,
+                start_date=(datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+            )
+            if df.empty:
+                return None
+
+            df['net'] = df['buy'] - df['sell']
+            return df
+        except:
+            return None
+
+    # =============================
+    # 👥 外資連買
+    # =============================
+    def calc_foreign_streak(df_chip):
+        foreign = df_chip[df_chip['name'].str.contains('Foreign')]
+        daily = foreign.groupby('date')['net'].sum().sort_index()
+
+        streak = 0
+        for v in reversed(daily.tolist()):
+            if v > 0:
+                streak += 1
+            else:
+                break
+
+        return streak
+
+    # =============================
+    # 🧠 AI評分
+    # =============================
+    def score_stock(df_price, df_chip):
+        score = 0
+        streak = calc_foreign_streak(df_chip)
+
+        score += min(streak * 5, 25)
+
+        if df_price['Close'].iloc[-1] > df_price['MA20'].iloc[-1]:
+            score += 15
+
+        if df_price['MACD'].iloc[-1] > df_price['Signal'].iloc[-1]:
+            score += 15
+
+        if 40 < df_price['RSI'].iloc[-1] < 70:
+            score += 10
+
+        return score, streak
+
+    # =============================
+    # 🚀 主邏輯（限制掃描數量避免卡死）
+    # =============================
+    stock_list = load_stock_pool()
+    df_info = load_stock_info()
+
+    MAX_SCAN = st.slider("掃描股票數量（效能控制）", 10, 200, 50)
+
+    results = []
+
+    with st.spinner("AI掃描中..."):
+
+        for stock_id in stock_list[:MAX_SCAN]:
+
+            ticker = get_ticker(stock_id, df_info)
+            if ticker is None:
+                continue
+
+            df_price = fetch_price_fast(ticker)
+            df_chip = fetch_chip_fast(stock_id)
+
+            if df_price is None or df_chip is None:
+                continue
+
+            score, streak = score_stock(df_price, df_chip)
+
+            results.append({
+                "股票": stock_id,
+                "分數": score,
+                "外資連買": streak,
+                "價格": round(df_price['Close'].iloc[-1], 2)
+            })
+
+    df_result = pd.DataFrame(results).sort_values(by="分數", ascending=False)
+
+    # =============================
+    # 🎨 TradingView UI
+    # =============================
+    if not df_result.empty:
+
+        for _, row in df_result.head(20).iterrows():
+
+            score = row['分數']
+            streak = row['外資連買']
+
+            if score >= 60:
+                signal = "🔥 強勢"
+                color = "#00E676"
+            elif score >= 40:
+                signal = "👍 偏多"
+                color = "#FFD54F"
+            else:
+                signal = "⚠️ 觀察"
+                color = "#EF5350"
+
+            st.markdown(f"""
+            <div style="
+                background:#131722;
+                border:1px solid #2A2E39;
+                border-radius:12px;
+                padding:14px;
+                margin-bottom:10px;
+            ">
+                <div style="display:flex;justify-content:space-between;">
+                    <div style="color:white;font-size:16px;">
+                        {row['股票']}
+                    </div>
+                    <div style="color:{color};font-weight:bold;">
+                        {signal}
+                    </div>
+                </div>
+
+                <div style="color:#9BA3AF;font-size:13px;margin-top:6px;">
+                    分數：{score} ｜ 外資連買：{streak} 天 ｜ 價格：{row['價格']}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    else:
+        st.warning("⚠️ 沒有選股結果（可能股票池或API問題）")
+
+
+
+
+
