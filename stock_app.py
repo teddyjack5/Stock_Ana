@@ -328,7 +328,7 @@ def load_stock_pool():
         gid = "1313725012" 
         
         # 3. 構造直接下載 CSV 的連結 (這是 Google Sheet 最穩定的 API 進入點)
-        csv_url = f"https://docs.google.com/spreadsheets/d/1-LpwNnPIQMUQk75HHezxXbLVms6AihcS7g_eE3I955g/edit?gid=1313725012#gid=1313725012"
+        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
         
         # 4. 直接讀取
         df = pd.read_csv(csv_url)
