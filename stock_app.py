@@ -317,12 +317,27 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def load_stock_pool():
-    #conn = st.connection("gsheets", type=GSheetsConnection)
-    df = conn.read(worksheet="stock_pool")
+    try:
+        # 建立連線
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        
+        # 讀取指定分頁，建議檢查分頁名稱是否完全正確（含大小寫與空格）
+        df = conn.read(worksheet="stock_pool")
+        
+        if df is None or df.empty:
+            st.warning("⚠️ 股票池分頁 'stock_pool' 內容為空")
+            return []
 
-    df = df.dropna()
-    stock_list = df['stock_id'].astype(str).tolist()
-    return stock_list
+        # 清理資料：移除空值、轉字串、移除前後空格
+        # 這樣可以防止 "2330 " 這種格式造成 yfinance 抓不到資料
+        stock_list = df['stock_id'].dropna().astype(str).str.strip().tolist()
+        return stock_list
+
+    except Exception as e:
+        # 這裡會攔截您遇到的 HTTPError，並以警告方式顯示，而不會讓整個 App 崩潰
+        st.error(f"❌ 讀取 stock_pool 失敗，請確認分頁名稱或權限設定。錯誤: {e}")
+        # 回傳空清單或預設清單，確保後續邏輯能跑下去
+        return []
 
 # ==============================================================================
 # 第二部分：【互動對話視窗 (Dialogs)】 - UI 彈窗功能定義
