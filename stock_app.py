@@ -1660,60 +1660,73 @@ from datetime import datetime, timedelta
 with tab_ai:
     st.markdown("### 🤖 全台股 AI 掃描模式")
     
-    # 讓使用者選擇範圍
     scan_target = st.selectbox("選擇掃描範圍", ["我的股票池 (Sheets)", "全市場 (上市櫃股票)"])
-    
-    # 動態調整 Slider 上限至 1800
     scan_limit = st.slider("掃描標的數量", 10, 2000, 500)
     
     if st.button("🚀 啟動高效能掃描"):
+        # 確保有下載對照表
         df_info = dl.taiwan_stock_info()
+        df_info['stock_id'] = df_info['stock_id'].astype(str)
         
-        # 準備清單
+        # 1. 準備清單並徹底清洗格式
         if scan_target == "我的股票池 (Sheets)":
             raw_list = load_stock_pool()
-            full_list = [str(s) for s in raw_list]
+            # 修正：確保 2330.0 會變成 "2330"
+            full_list = []
+            for s in raw_list:
+                try:
+                    full_list.append(str(int(float(s))))
+                except: continue
         else:
-            # 排除權證，只留普通股
             full_list = df_info[df_info['type'] == 'stock']['stock_id'].tolist()
         
         test_list = full_list[:scan_limit]
         
-        st.info(f"⚡️ 啟動多執行緒並行運算 (Threads: 10)，預計分析 {len(test_list)} 檔標的...")
+        st.info(f"⚡️ 啟動多執行緒分析 {len(test_list)} 檔標的...")
         
         results = []
         progress_bar = st.progress(0)
         status = st.empty()
         
-        # --- 使用並行處理加速 ---
+        # 2. 並行處理
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            # 這裡確保傳入的是清洗過的 sid
             future_to_stock = {executor.submit(fetch_stock_analysis_with_debug, sid, df_info): sid for sid in test_list}
             
             for i, future in enumerate(concurrent.futures.as_completed(future_to_stock)):
-                res = future.result()
-                if res and res['分數'] >= 40: # 只紀錄有潛力的
-                    results.append(res)
+                try:
+                    res = future.result()
+                    # 測試階段建議先降低門檻 (例如 >= 10)，確認真的有抓到資料
+                    if res and res['分數'] >= 20: 
+                        results.append(res)
+                except Exception as e:
+                    pass # 忽略單一股票錯誤
                 
-                # 更新進度條
-                if i % 10 == 0:
-                    pct = (i+1) / len(test_list)
+                # 更新進度
+                if i % 5 == 0:
+                    pct = (i + 1) / len(test_list)
                     progress_bar.progress(pct)
-                    status.text(f"已掃描: {i+1} 檔 | 目前發現績優股: {len(results)} 檔")
+                    status.text(f"已完成: {i+1}/{len(test_list)} | 目前入選: {len(results)} 檔")
 
-        # --- 顯示結果 ---
+        # 3. 顯示結果
         if results:
+            # 依分數排序
             df_res = pd.DataFrame(results).sort_values(by="分數", ascending=False)
-            st.success(f"✅ 掃描完成！從 {len(test_list)} 檔中篩選出 {len(df_res)} 檔強勢股。")
+            st.success(f"✅ 掃描完成！符合條件標的如下：")
             
-            # 使用您的 TradingView 風格顯示卡片
-            for _, row in df_res.head(15).iterrows():
-                with st.container():
-                    st.markdown(f"""
-                    <div style="background:#131722; border-left: 5px solid #00E676; padding:15px; margin-bottom:10px; border-radius:5px;">
+            for _, row in df_res.head(20).iterrows():
+                # 動態顏色判斷
+                card_color = "#00E676" if row['分數'] >= 60 else "#FFD54F"
+                st.markdown(f"""
+                <div style="background:#131722; border-left: 5px solid {card_color}; padding:15px; margin-bottom:10px; border-radius:5px;">
+                    <div style="display:flex; justify-content:space-between;">
                         <span style="color:white; font-size:18px;"><b>{row['股票']} {row['名稱']}</b></span>
-                        <span style="color:#00E676; float:right;"><b>AI 評分: {row['分數']}</b></span><br>
-                        <small style="color:#9BA3AF;">外資連買: {row['外資連買']}天 | 現價: {row['現價']} | MA20: {row['MA20']:.2f}</small>
+                        <span style="color:{card_color}; font-size:18px;"><b>AI 評分: {row['分數']}</b></span>
                     </div>
-                    """, unsafe_allow_html=True)
-
-
+                    <div style="color:#9BA3AF; font-size:14px; margin-top:5px;">
+                        外資連買: {row['外資連買']}天 ｜ 現價: {row['現價']} ｜ 月線(MA20): {row['MA20']:.2f}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.warning("⚠️ 掃描完成，但沒有標的符合您的評分門檻 (目前設定 20 分)。")
