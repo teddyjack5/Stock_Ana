@@ -1664,31 +1664,39 @@ with tab_ai:
     scan_limit = st.slider("掃描標的數量", 10, 2000, 500)
     
     if st.button("🚀 啟動高效能掃描"):
-        # 確保有下載對照表
         df_info = dl.taiwan_stock_info()
         df_info['stock_id'] = df_info['stock_id'].astype(str)
         
         # 1. 準備清單並徹底清洗格式
         if scan_target == "我的股票池 (Sheets)":
             raw_list = load_stock_pool()
-            # 修正：確保 2330.0 會變成 "2330"
             full_list = []
             for s in raw_list:
                 try:
                     full_list.append(str(int(float(s))))
                 except: continue
         else:
+            # 排除權證，只留普通股
             full_list = df_info[df_info['type'] == 'stock']['stock_id'].tolist()
         
         test_list = full_list[:scan_limit]
+        total_count = len(test_list)
         
-        st.info(f"⚡️ 啟動多執行緒分析 {len(test_list)} 檔標的...")
-        
-        results = []
-        # 新增：統計各種失敗原因
-        stats = {"成功抓取": 0, "API回傳空值": 0, "系統噴錯": 0, "分數未達標": 0}
-        sample_data = None # 用來存放第一筆成功的原始資料預覽
+        if total_count == 0:
+            st.error("❌ 清單為空，請確認資料源。")
+            st.stop()
 
+        st.info(f"⚡️ 啟動多執行緒分析 {total_count} 檔標的...")
+        
+        # --- 診斷統計初始化 ---
+        results = []
+        stats = {"成功抓取": 0, "API回傳空值": 0, "系統噴錯": 0, "分數未達標": 0}
+        sample_data = None 
+        
+        progress_bar = st.progress(0.0)
+        status = st.empty()
+        
+        # 2. 並行處理
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             future_to_stock = {executor.submit(fetch_stock_analysis_with_debug, sid, df_info): sid for sid in test_list}
             
@@ -1697,10 +1705,10 @@ with tab_ai:
                     res = future.result()
                     if res:
                         stats["成功抓取"] += 1
-                        if sample_data is None: sample_data = res # 抓第一筆當範本
+                        if sample_data is None: sample_data = res # 存第一筆當範本
                         
-                        # 檢查門檻 (這裡門檻設 0 方便測試)
-                        if res['分數'] >= 0: 
+                        # 假日測試建議門檻設 0
+                        if res.get('分數', 0) >= 0: 
                             results.append(res)
                         else:
                             stats["分數未達標"] += 1
@@ -1709,14 +1717,16 @@ with tab_ai:
                 except Exception as e:
                     stats["系統噴錯"] += 1
                 
-                # 更新進度介面
-                if i % 5 == 0:
-                    pct = (i + 1) / len(test_list)
-                    progress_bar.progress(pct)
-                    status.text(f"已分析: {i+1} 檔 | 成功: {stats['成功抓取']} | 失敗: {stats['API回傳空值']}")
+                # --- 修正進度條報錯點 ---
+                # 使用 min(1.0, ...) 確保 pct 不會超過 1.0
+                pct = min(1.0, (i + 1) / total_count)
+                progress_bar.progress(pct)
+                
+                if i % 10 == 0:
+                    status.text(f"已完成: {i+1}/{total_count} | 抓取成功: {stats['成功抓取']}")
 
-        # --- 4. 診斷報告 (放在結果顯示之前) ---
-        with st.expander("🔍 系統診斷報告 (SIT Debug Use)"):
+        # --- 3. 顯示診斷報告 (關鍵：確認是否有抓到資料) ---
+        with st.expander("🔍 掃描診斷報告 (確認資料有無抓到)"):
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("成功抓取", stats["成功抓取"])
             c2.metric("API 空值", stats["API回傳空值"])
@@ -1724,41 +1734,16 @@ with tab_ai:
             c4.metric("低分過濾", stats["分數未達標"])
             
             if sample_data:
-                st.write("📝 **首筆資料抓取範例 (確認 API 欄位用):**")
-                st.json(sample_data) # 直接顯示抓到的第一筆資料內容
+                st.write("✅ **資料抓取成功範例 (來自 API 的真實數據):**")
+                st.json(sample_data) # 顯示第一筆資料的所有欄位
             else:
-                st.error("❌ 完全沒有任何一檔股票成功抓取資料。請檢查網路連線或 API Key。")
-        progress_bar = st.progress(0)
-        status = st.empty()
-        
-        # 2. 並行處理
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            # 這裡確保傳入的是清洗過的 sid
-            future_to_stock = {executor.submit(fetch_stock_analysis_with_debug, sid, df_info): sid for sid in test_list}
-            
-            for i, future in enumerate(concurrent.futures.as_completed(future_to_stock)):
-                try:
-                    res = future.result()
-                    # 測試階段建議先降低門檻 (例如 >= 10)，確認真的有抓到資料
-                    if res and res['分數'] >= 0: 
-                        results.append(res)
-                except Exception as e:
-                    pass # 忽略單一股票錯誤
-                
-                # 更新進度
-                if i % 5 == 0:
-                    pct = (i + 1) / len(test_list)
-                    progress_bar.progress(pct)
-                    status.text(f"已完成: {i+1}/{len(test_list)} | 目前入選: {len(results)} 檔")
+                st.error("❌ 完全沒有抓到資料。可能原因：假日 API 未更新或 yfinance 被限流。")
 
-        # 3. 顯示結果
+        # 4. 顯示結果卡片
         if results:
-            # 依分數排序
             df_res = pd.DataFrame(results).sort_values(by="分數", ascending=False)
-            st.success(f"✅ 掃描完成！符合條件標的如下：")
-            
+            st.success(f"✅ 篩選出 {len(df_res)} 檔標的")
             for _, row in df_res.head(20).iterrows():
-                # 動態顏色判斷
                 card_color = "#00E676" if row['分數'] >= 60 else "#FFD54F"
                 st.markdown(f"""
                 <div style="background:#131722; border-left: 5px solid {card_color}; padding:15px; margin-bottom:10px; border-radius:5px;">
@@ -1767,9 +1752,7 @@ with tab_ai:
                         <span style="color:{card_color}; font-size:18px;"><b>AI 評分: {row['分數']}</b></span>
                     </div>
                     <div style="color:#9BA3AF; font-size:14px; margin-top:5px;">
-                        外資連買: {row['外資連買']}天 ｜ 現價: {row['現價']} ｜ 月線(MA20): {row['MA20']:.2f}
+                        外資連買: {row['外資連買']}天 ｜ 現價: {row['現價']} ｜ MA20: {row['MA20']:.2f}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-        else:
-            st.warning("⚠️ 掃描完成，但沒有標的符合您的評分門檻 (目前設定 20 分)。")
