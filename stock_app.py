@@ -252,42 +252,56 @@ def load_stock_pool():
 # 2. 法人籌碼與技術面掃描邏輯
 # ==========================================
 def fetch_stock_analysis(stock_id, df_info):
-    """分析單一股票的籌碼與技術指標"""
     try:
-        # 判定市場 (TSE/OTC)
-        row = df_info[df_info['stock_id'] == stock_id]
+        # 1. 判定市場
+        row = df_info[df_info['stock_id'] == str(stock_id)] # 確保 sid 是字串
         if row.empty: return None
         market = ".TW" if row.iloc[0]['market'] == "TSE" else ".TWO"
         ticker = stock_id + market
 
-        # 抓取技術面 (近 2 個月)
+        # 2. 抓取價格 (加入重試機制或輕量化)
         price_df = yf.download(ticker, period="2mo", interval="1d", progress=False)
         if price_df.empty: return None
         
-        # 計算指標
-        close = price_df['Close']
-        ma20 = close.rolling(20).mean().iloc[-1]
-        current_price = close.iloc[-1]
+        # 💡 安全提取：解決 yfinance 可能產生的 MultiIndex 問題
+        if isinstance(price_df.columns, pd.MultiIndex):
+            price_df.columns = price_df.columns.get_level_values(0)
+            
+        close = price_df['Close'].dropna()
+        if close.empty: return None
         
-        # 抓取法人籌碼 (近 7 天)
+        current_price = float(close.iloc[-1]) # 強制轉 float
+        prev_price = float(close.iloc[-2])
+        ma20 = float(close.rolling(20).mean().iloc[-1])
+        
+        # 3. 抓取法人籌碼
         start_date = (datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
         chip_df = dl.taiwan_stock_institutional_investors(stock_id=stock_id, start_date=start_date)
         
-        if chip_df.empty: return None
+        if chip_df is None or chip_df.empty: return None
         
-        # 計算外資連買天數
-        foreign = chip_df[chip_df['name'].str.contains('Foreign')]
-        daily_net = foreign.groupby('date')['buy'].sum() - foreign.groupby('date')['sell'].sum()
+        # 4. 計算外資連買 (streak)
+        # 修正：確保只抓 Foreign_Investor，避開其他含有 Foreign 字眼的類別
+        foreign = chip_df[chip_df['name'].str.contains('Foreign', case=False, na=False)]
+        daily_net = foreign.groupby('date').apply(lambda x: x['buy'].sum() - x['sell'].sum()).sort_index()
+        
         streak = 0
         for v in reversed(daily_net.tolist()):
             if v > 0: streak += 1
             else: break
             
-        # 評分邏輯 (滿分 100)
+        # 5. 評分邏輯 (優化權重)
         score = 0
-        score += min(streak * 15, 45) # 連買一天 15 分，最高 45
-        if current_price > ma20: score += 30 # 站上月線 30 分
-        if current_price > close.iloc[-2]: score += 25 # 今日收紅 25 分
+        # 籌碼面 (最高 45)
+        score += min(streak * 15, 45) 
+        # 技術面 (站上月線 30)
+        if current_price > ma20: score += 30 
+        # 動能面 (今日強於昨日 25)
+        if current_price > prev_price: score += 25 
+        
+        # 💡 額外獎勵：如果 RSI 強勢(選配) 或 創 20 日新高
+        if current_price >= close.tail(20).max():
+            score += 5 
 
         return {
             "股票": stock_id,
@@ -297,7 +311,8 @@ def fetch_stock_analysis(stock_id, df_info):
             "現價": round(current_price, 2),
             "月線距離": round(((current_price/ma20)-1)*100, 2)
         }
-    except:
+    except Exception as e:
+        # print(f"分析 {stock_id} 出錯: {e}") # Debug 用
         return None
 
 # =============================
