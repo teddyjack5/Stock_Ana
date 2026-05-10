@@ -253,57 +253,43 @@ def load_stock_pool():
 # ==========================================
 def fetch_stock_analysis_with_debug(stock_id, df_info):
     try:
-        # 1. 正規化與市場判定
+        # 1. 基本檢查
         sid = str(int(float(stock_id)))
         row = df_info[df_info['stock_id'] == sid]
-        if row.empty: return None
-        
-        market = ".TW" if row.iloc[0]['market'] == "TSE" else ".TWO"
-        ticker = sid + market
+        if row.empty:
+            return {"股票": sid, "名稱": "查無此股", "分數": 0, "資料狀態": "對照表無資料"}
+
         name = row.iloc[0]['stock_name']
-
-        # 2. 抓取價格 (yfinance 假日通常有歷史資料)
-        price_df = yf.download(ticker, period="3mo", progress=False) # 拉長到 3 個月
-        if price_df is None or price_df.empty: return None
         
-        # 3. 抓取法人資料 (假日優化版)
-        # 修正點：將 10 天拉長到 20 天，確保跨過連假
-        start_date = (datetime.now() - timedelta(days=20)).strftime('%Y-%m-%d')
+        # --- 2. 測試 yfinance 連線 ---
         try:
-            chip_df = dl.taiwan_stock_institutional_investors(stock_id=sid, start_date=start_date)
+            ticker = sid + (".TW" if row.iloc[0]['market'] == "TSE" else ".TWO")
+            price_df = yf.download(ticker, period="1mo", progress=False)
+            has_price = not price_df.empty
         except:
-            chip_df = pd.DataFrame()
+            has_price = False
 
-        # 4. 關鍵運算
-        streak = 0
-        # 修正點：即使籌碼為空，也不要 return None，而是讓籌碼分數為 0
-        if not chip_df.empty:
-            foreign = chip_df[chip_df['name'].str.contains('Foreign', case=False)]
-            if not foreign.empty:
-                daily_net = foreign.groupby('date').apply(lambda x: x['buy'].sum() - x['sell'].sum()).sort_index()
-                for v in reversed(daily_net.tolist()):
-                    if v > 0: streak += 1
-                    else: break
-        
-        # 取得最新價格與 MA20
-        current_price = float(price_df['Close'].iloc[-1])
-        ma20 = float(price_df['Close'].rolling(20).mean().iloc[-1])
+        # --- 3. 測試 FinMind 連線 ---
+        try:
+            start_date = (datetime.now() - timedelta(days=20)).strftime('%Y-%m-%d')
+            chip_df = dl.taiwan_stock_institutional_investors(stock_id=sid, start_date=start_date)
+            has_chip = not chip_df.empty
+        except:
+            has_chip = False
 
-        # 5. 評分邏輯 (即使籌碼 0 分，技術指標有過也能顯示)
-        score = 0
-        score += min(streak * 15, 45) # 籌碼分
-        if current_price > ma20: score += 35 # 技術分：站上月線
-        if len(price_df) > 1 and current_price > float(price_df['Close'].iloc[-2]): 
-            score += 20 # 技術分：今日收紅
-
+        # --- 4. 強制回傳結果 (不論有沒有資料) ---
         return {
-            "股票": sid, "名稱": name, "分數": score, 
-            "外資連買": streak, "現價": round(current_price, 2), "MA20": round(ma20, 2),
-            "資料狀態": "完整" if not chip_df.empty else "僅技術指標"
+            "股票": sid, 
+            "名稱": name, 
+            "分數": 100 if has_price else 10, # 只要有抓到價格就給 100 分，方便顯示
+            "外資連買": 0, 
+            "現價": 0.0, 
+            "MA20": 0.0,
+            "資料狀態": f"價:{has_price}, 籌:{has_chip}"
         }
     except Exception as e:
-        # 如果發生非預期的錯誤，才回傳 None
-        return None
+        # 這是最後一道防線，萬一真的噴錯，把錯誤訊息傳回去
+        return {"股票": stock_id, "名稱": "系統錯誤", "分數": -1, "資料狀態": str(e)}
 # =============================
 # 🔥 籌碼分析強化模組（NEW - 不影響原邏輯）
 # =============================
