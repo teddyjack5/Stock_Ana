@@ -248,8 +248,6 @@ def load_stock_pool():
         # 預設清單 (避免系統當機)
         return ["2330", "2317", "2454", "2603", "2609", "2303", "2382", "3037"]
 
-st.write(f"目前股票池數量: {len(stock_list)}")
-
 # ==========================================
 # 2. 法人籌碼與技術面掃描邏輯
 # ==========================================
@@ -1673,6 +1671,8 @@ with tab_ai:
     if st.session_state.get('do_scan', False):
         stock_list = load_stock_pool()
         df_info = dl.taiwan_stock_info()
+
+        st.write(f"目前股票池數量: {len(stock_list)}")
         
         results = []
         progress_bar = st.progress(0)
