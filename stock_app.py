@@ -1697,7 +1697,7 @@ with tab_ai:
                 try:
                     res = future.result()
                     # 測試階段建議先降低門檻 (例如 >= 10)，確認真的有抓到資料
-                    if res and res['分數'] >= 20: 
+                    if res and res['分數'] >= 0: 
                         results.append(res)
                 except Exception as e:
                     pass # 忽略單一股票錯誤
