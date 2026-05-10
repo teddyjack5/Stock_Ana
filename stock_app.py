@@ -1685,6 +1685,49 @@ with tab_ai:
         st.info(f"⚡️ 啟動多執行緒分析 {len(test_list)} 檔標的...")
         
         results = []
+        # 新增：統計各種失敗原因
+        stats = {"成功抓取": 0, "API回傳空值": 0, "系統噴錯": 0, "分數未達標": 0}
+        sample_data = None # 用來存放第一筆成功的原始資料預覽
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_stock = {executor.submit(fetch_stock_analysis_with_debug, sid, df_info): sid for sid in test_list}
+            
+            for i, future in enumerate(concurrent.futures.as_completed(future_to_stock)):
+                try:
+                    res = future.result()
+                    if res:
+                        stats["成功抓取"] += 1
+                        if sample_data is None: sample_data = res # 抓第一筆當範本
+                        
+                        # 檢查門檻 (這裡門檻設 0 方便測試)
+                        if res['分數'] >= 0: 
+                            results.append(res)
+                        else:
+                            stats["分數未達標"] += 1
+                    else:
+                        stats["API回傳空值"] += 1
+                except Exception as e:
+                    stats["系統噴錯"] += 1
+                
+                # 更新進度介面
+                if i % 5 == 0:
+                    pct = (i + 1) / len(test_list)
+                    progress_bar.progress(pct)
+                    status.text(f"已分析: {i+1} 檔 | 成功: {stats['成功抓取']} | 失敗: {stats['API回傳空值']}")
+
+        # --- 4. 診斷報告 (放在結果顯示之前) ---
+        with st.expander("🔍 系統診斷報告 (SIT Debug Use)"):
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("成功抓取", stats["成功抓取"])
+            c2.metric("API 空值", stats["API回傳空值"])
+            c3.metric("系統異常", stats["系統噴錯"])
+            c4.metric("低分過濾", stats["分數未達標"])
+            
+            if sample_data:
+                st.write("📝 **首筆資料抓取範例 (確認 API 欄位用):**")
+                st.json(sample_data) # 直接顯示抓到的第一筆資料內容
+            else:
+                st.error("❌ 完全沒有任何一檔股票成功抓取資料。請檢查網路連線或 API Key。")
         progress_bar = st.progress(0)
         status = st.empty()
         
