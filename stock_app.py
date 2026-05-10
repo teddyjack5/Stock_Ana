@@ -1669,9 +1669,14 @@ with tab_ai:
             st.session_state.do_scan = True
 
     if st.session_state.get('do_scan', False):
-        stock_list = load_stock_pool()
-        # 抓取全台股資訊清單，用來判定上市(TSE)或上櫃(OTC)
+        # 1. 讀取時強制轉換為字串並移除小數點
+        raw_stock_list = load_stock_pool()
+        # 強制將 2330.0 轉為 "2330"
+        stock_list = [str(int(float(s))) if s.replace('.','').isdigit() else str(s) for s in raw_stock_list]
+        
         df_info = dl.taiwan_stock_info()
+        # 確保資訊表的代號也是字串
+        df_info['stock_id'] = df_info['stock_id'].astype(str)
 
         st.info(f"📊 系統偵測：目前股票池總數為 {len(stock_list)} 檔標的")
         
@@ -1683,41 +1688,27 @@ with tab_ai:
         for i, sid in enumerate(stock_list[:scan_limit]):
             status_text.text(f"正在分析: {sid}...")
             
-            # --- 🚀 關鍵修改：自動補上市場後綴 ---
-            # 從資訊表中找出該代號對應的列
+            # 2. 進行正規化比對
             row_info = df_info[df_info['stock_id'] == sid]
             
             if not row_info.empty:
-                market = row_info.iloc[0]['market']
-                # 根據市場類型補上 yfinance 格式
-                if market == "TSE":
-                    full_ticker = f"{sid}.TW"
-                elif market == "OTC":
-                    full_ticker = f"{sid}.TWO"
-                else:
-                    full_ticker = sid  # 若非上市櫃則維持原樣
-                
-                # 將「修正後的代號」傳入分析函式
-                res = fetch_stock_analysis(sid, df_info) # 這裡維持 sid 是因為函式內會處理
-                # 注意：若您的 fetch_stock_analysis 內部沒有處理 .TW，
-                # 建議確認該函式是否已依照我之前的建議修改。
-                
+                # 這裡的 res 內部會處理 yfinance 的 .TW/.TWO
+                res = fetch_stock_analysis(sid, df_info)
                 if res: 
                     results.append(res)
             else:
-                # 找不到資訊的代號直接跳過，避免系統崩潰
+                # 如果還是找不到，可以 print 出來 debug
+                # st.write(f"偵錯：找不到代號 {sid}")
                 pass
             
             progress_bar.progress((i + 1) / min(len(stock_list), scan_limit))
         
         status_text.success("掃描完成！")
         
-        # 顯示結果
+        # 顯示結果 (維持您的 TradingView UI 風格)
         if results:
             df_res = pd.DataFrame(results).sort_values(by="分數", ascending=False)
-            
             for _, row in df_res.head(10).iterrows():
-                # 分數門檻顏色顯示
                 color = "#00E676" if row['分數'] >= 70 else "#FFD54F"
                 st.markdown(f"""
                 <div style="background:#131722; border:1px solid #2A2E39; border-radius:12px; padding:15px; margin-bottom:10px;">
@@ -1731,8 +1722,7 @@ with tab_ai:
                 </div>
                 """, unsafe_allow_html=True)
         else:
-            st.error("掃描過程中未發現符合條件的標的。可能原因：代號格式不符或條件過於嚴苛。")
-
+            st.error("掃描過程中未發現符合條件的標的。")
 
 
 
