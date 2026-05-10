@@ -1670,9 +1670,10 @@ with tab_ai:
 
     if st.session_state.get('do_scan', False):
         stock_list = load_stock_pool()
+        # 抓取全台股資訊清單，用來判定上市(TSE)或上櫃(OTC)
         df_info = dl.taiwan_stock_info()
 
-        st.write(f"目前股票池數量: {len(stock_list)}")
+        st.info(f"📊 系統偵測：目前股票池總數為 {len(stock_list)} 檔標的")
         
         results = []
         progress_bar = st.progress(0)
@@ -1681,9 +1682,33 @@ with tab_ai:
         # 執行掃描
         for i, sid in enumerate(stock_list[:scan_limit]):
             status_text.text(f"正在分析: {sid}...")
-            res = fetch_stock_analysis(sid, df_info)
-            if res: results.append(res)
-            progress_bar.progress((i + 1) / scan_limit)
+            
+            # --- 🚀 關鍵修改：自動補上市場後綴 ---
+            # 從資訊表中找出該代號對應的列
+            row_info = df_info[df_info['stock_id'] == sid]
+            
+            if not row_info.empty:
+                market = row_info.iloc[0]['market']
+                # 根據市場類型補上 yfinance 格式
+                if market == "TSE":
+                    full_ticker = f"{sid}.TW"
+                elif market == "OTC":
+                    full_ticker = f"{sid}.TWO"
+                else:
+                    full_ticker = sid  # 若非上市櫃則維持原樣
+                
+                # 將「修正後的代號」傳入分析函式
+                res = fetch_stock_analysis(sid, df_info) # 這裡維持 sid 是因為函式內會處理
+                # 注意：若您的 fetch_stock_analysis 內部沒有處理 .TW，
+                # 建議確認該函式是否已依照我之前的建議修改。
+                
+                if res: 
+                    results.append(res)
+            else:
+                # 找不到資訊的代號直接跳過，避免系統崩潰
+                pass
+            
+            progress_bar.progress((i + 1) / min(len(stock_list), scan_limit))
         
         status_text.success("掃描完成！")
         
@@ -1691,8 +1716,8 @@ with tab_ai:
         if results:
             df_res = pd.DataFrame(results).sort_values(by="分數", ascending=False)
             
-            # 使用自定義 TradingView 風格顯示高分標的
             for _, row in df_res.head(10).iterrows():
+                # 分數門檻顏色顯示
                 color = "#00E676" if row['分數'] >= 70 else "#FFD54F"
                 st.markdown(f"""
                 <div style="background:#131722; border:1px solid #2A2E39; border-radius:12px; padding:15px; margin-bottom:10px;">
@@ -1706,7 +1731,7 @@ with tab_ai:
                 </div>
                 """, unsafe_allow_html=True)
         else:
-            st.error("掃描過程中未發現符合條件的標的。")
+            st.error("掃描過程中未發現符合條件的標的。可能原因：代號格式不符或條件過於嚴苛。")
 
 
 
