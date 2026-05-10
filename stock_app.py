@@ -231,6 +231,75 @@ def fetch_news_data_cached(stock_code, keywords):
 # 初始化 DataLoader (用於其他未快取的輕量操作)
 dl = DataLoader()
 
+# ==========================================
+# 1. 強化版股票池讀取 (解決之前的 302 錯誤)
+# ==========================================
+@st.cache_data(ttl=3600)
+def load_stock_pool():
+    """從 Google Sheet 讀取股票池，若失敗則回傳預設強勢股"""
+    try:
+        # 使用最穩定的導出 CSV 方式 (請更換為您的 GID)
+        sheet_id = "1-LpwNnPIQMUQk75HHezxXbLVms6AihcS7g_eE3I955g"
+        gid = "1313725012" 
+        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+        df = pd.read_csv(csv_url)
+        return df['stock_id'].dropna().astype(str).str.strip().tolist()
+    except:
+        # 預設清單 (避免系統當機)
+        return ["2330", "2317", "2454", "2603", "2609", "2303", "2382", "3037"]
+
+# ==========================================
+# 2. 法人籌碼與技術面掃描邏輯
+# ==========================================
+def fetch_stock_analysis(stock_id, df_info):
+    """分析單一股票的籌碼與技術指標"""
+    try:
+        # 判定市場 (TSE/OTC)
+        row = df_info[df_info['stock_id'] == stock_id]
+        if row.empty: return None
+        market = ".TW" if row.iloc[0]['market'] == "TSE" else ".TWO"
+        ticker = stock_id + market
+
+        # 抓取技術面 (近 2 個月)
+        price_df = yf.download(ticker, period="2mo", interval="1d", progress=False)
+        if price_df.empty: return None
+        
+        # 計算指標
+        close = price_df['Close']
+        ma20 = close.rolling(20).mean().iloc[-1]
+        current_price = close.iloc[-1]
+        
+        # 抓取法人籌碼 (近 7 天)
+        start_date = (datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
+        chip_df = dl.taiwan_stock_institutional_investors(stock_id=stock_id, start_date=start_date)
+        
+        if chip_df.empty: return None
+        
+        # 計算外資連買天數
+        foreign = chip_df[chip_df['name'].str.contains('Foreign')]
+        daily_net = foreign.groupby('date')['buy'].sum() - foreign.groupby('date')['sell'].sum()
+        streak = 0
+        for v in reversed(daily_net.tolist()):
+            if v > 0: streak += 1
+            else: break
+            
+        # 評分邏輯 (滿分 100)
+        score = 0
+        score += min(streak * 15, 45) # 連買一天 15 分，最高 45
+        if current_price > ma20: score += 30 # 站上月線 30 分
+        if current_price > close.iloc[-2]: score += 25 # 今日收紅 25 分
+
+        return {
+            "股票": stock_id,
+            "名稱": row.iloc[0]['stock_name'],
+            "分數": score,
+            "外資連買": streak,
+            "現價": round(current_price, 2),
+            "月線距離": round(((current_price/ma20)-1)*100, 2)
+        }
+    except:
+        return None
+
 # =============================
 # 🔥 籌碼分析強化模組（NEW - 不影響原邏輯）
 # =============================
@@ -1588,4 +1657,55 @@ with tab_comparison:
 
         except Exception as e:  
             st.error(f"繪圖發生錯誤: {e}")
+
+with tab_ai:
+    st.markdown('<div class="section-title">🤖 AI 選股：法人籌碼強勢榜</div>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        scan_limit = st.slider("掃描深度（標的數量）", 10, 300, 50, help="數量越多掃描越久")
+    with col2:
+        if st.button("🚀 開始掃描"):
+            st.session_state.do_scan = True
+
+    if st.session_state.get('do_scan', False):
+        stock_list = load_stock_pool()
+        df_info = dl.taiwan_stock_info()
+        
+        results = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # 執行掃描
+        for i, sid in enumerate(stock_list[:scan_limit]):
+            status_text.text(f"正在分析: {sid}...")
+            res = fetch_stock_analysis(sid, df_info)
+            if res: results.append(res)
+            progress_bar.progress((i + 1) / scan_limit)
+        
+        status_text.success("掃描完成！")
+        
+        # 顯示結果
+        if results:
+            df_res = pd.DataFrame(results).sort_values(by="分數", ascending=False)
+            
+            # 使用自定義 TradingView 風格顯示高分標的
+            for _, row in df_res.head(10).iterrows():
+                color = "#00E676" if row['分數'] >= 70 else "#FFD54F"
+                st.markdown(f"""
+                <div style="background:#131722; border:1px solid #2A2E39; border-radius:12px; padding:15px; margin-bottom:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="color:white; font-size:18px; font-weight:bold;">{row['股票']} {row['名稱']}</span>
+                        <span style="color:{color}; font-size:20px; font-weight:bold;">{row['分數']} 分</span>
+                    </div>
+                    <div style="color:#9BA3AF; font-size:14px; margin-top:8px;">
+                        外資連買：{row['外資連買']} 天 ｜ 目前價格：{row['現價']} ｜ 偏離月線：{row['月線距離']}%
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.error("掃描過程中未發現符合條件的標的。")
+
+
+
 
