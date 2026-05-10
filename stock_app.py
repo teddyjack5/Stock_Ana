@@ -1673,71 +1673,106 @@ with tab_comparison:
         except Exception as e:  
             st.error(f"繪圖發生錯誤: {e}")
 
+import concurrent.futures
+import pandas as pd
+import streamlit as st
+from datetime import datetime, timedelta
+
 with tab_ai:
-    st.markdown('<div class="section-title">🤖 AI 選股：法人籌碼強勢榜</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🤖 AI 選股：全台股法人籌碼強勢榜</div>', unsafe_allow_html=True)
+    
+    # --- 1. 設定掃描範圍 ---
+    scan_mode = st.radio("掃描範圍", ["股票池 (Sheets)", "全台股 (上市櫃)"], horizontal=True)
     
     col1, col2 = st.columns([2, 1])
     with col1:
-        scan_limit = st.slider("掃描深度（標的數量）", 10, 300, 50, help="數量越多掃描越久")
+        # 如果選全台股，上限開放到 2000
+        max_limit = 2000 if scan_mode == "全台股 (上市櫃)" else 300
+        scan_limit = st.slider("掃描深度", 10, max_limit, 100, help="全市場掃描建議設定在 500 以上")
     with col2:
-        if st.button("🚀 開始掃描"):
+        if st.button("🚀 開始全市場掃描", type="primary"):
             st.session_state.do_scan = True
 
     if st.session_state.get('do_scan', False):
-        # 1. 讀取時強制轉換為字串並移除小數點
-        raw_stock_list = load_stock_pool()
-        # 強制將 2330.0 轉為 "2330"
-        stock_list = [str(int(float(s))) if s.replace('.','').isdigit() else str(s) for s in raw_stock_list]
-        
+        # --- 2. 準備股票清單 ---
         df_info = dl.taiwan_stock_info()
-        # 確保資訊表的代號也是字串
-        df_info['stock_id'] = df_info['stock_id'].astype(str)
+        df_info['stock_id'] = df_info['stock_id'].astype(str) # 格式正規化
+        
+        if scan_mode == "股票池 (Sheets)":
+            raw_pool = load_stock_pool()
+            # 處理 2330.0 問題
+            stock_list = [str(int(float(s))) if str(s).replace('.','').isdigit() else str(s) for s in raw_pool]
+        else:
+            # 抓取全市場股票 (過濾掉權證與認購證)
+            stock_list = df_info[df_info['type'] == 'stock']['stock_id'].tolist()
 
-        st.info(f"📊 系統偵測：目前股票池總數為 {len(stock_list)} 檔標的")
+        # 根據 slider 限制數量
+        stock_list = stock_list[:scan_limit]
+        st.info(f"📊 啟動並行掃描：預計分析 {len(stock_list)} 檔標的")
         
         results = []
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        # 執行掃描
-        for i, sid in enumerate(stock_list[:scan_limit]):
-            status_text.text(f"正在分析: {sid}...")
+        # --- 3. 多執行緒並行運算 (SIT 高效能模式) ---
+        # 使用 10 個執行緒同時運作，速度提升 5-10 倍
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            # 建立任務對照表
+            future_to_sid = {executor.submit(fetch_stock_analysis, sid, df_info): sid for sid in stock_list}
             
-            # 2. 進行正規化比對
-            row_info = df_info[df_info['stock_id'] == sid]
-            
-            if not row_info.empty:
-                # 這裡的 res 內部會處理 yfinance 的 .TW/.TWO
-                res = fetch_stock_analysis(sid, df_info)
-                if res: 
-                    results.append(res)
-            else:
-                # 如果還是找不到，可以 print 出來 debug
-                # st.write(f"偵錯：找不到代號 {sid}")
-                pass
-            
-            progress_bar.progress((i + 1) / min(len(stock_list), scan_limit))
+            for i, future in enumerate(concurrent.futures.as_completed(future_to_sid)):
+                sid = future_to_sid[future]
+                try:
+                    res = future.result()
+                    if res and res.get('分數', 0) >= 40: # 只紀錄 40 分以上的，節省記憶體
+                        results.append(res)
+                except Exception as e:
+                    # 可以在這裡 print(f"Error {sid}: {e}") 進行除錯
+                    pass
+                
+                # 更新進度
+                progress = (i + 1) / len(stock_list)
+                progress_bar.progress(progress)
+                if i % 10 == 0: # 每 10 檔更新一次狀態，避免介面閃爍
+                    status_text.text(f"掃描進度: {i+1} / {len(stock_list)} (已發現 {len(results)} 檔績優股)")
+
+        status_text.success(f"✅ 全市場掃描完成！在 {len(stock_list)} 檔中篩選出 {len(results)} 檔符合初步條件。")
         
-        status_text.success("掃描完成！")
-        
-        # 顯示結果 (維持您的 TradingView UI 風格)
+        # --- 4. 顯示 TradingView 風格結果 ---
         if results:
             df_res = pd.DataFrame(results).sort_values(by="分數", ascending=False)
-            for _, row in df_res.head(10).iterrows():
-                color = "#00E676" if row['分數'] >= 70 else "#FFD54F"
+            
+            # 顯示前 20 名最優標的
+            st.write("### 🏆 綜合評分 Top 20")
+            for _, row in df_res.head(20).iterrows():
+                # 動態判斷標籤顏色
+                if row['分數'] >= 75:
+                    label, color = "🔥 極強勢", "#00E676"
+                elif row['分數'] >= 60:
+                    label, color = "✅ 轉強", "#FFD54F"
+                else:
+                    label, color = "⚖️ 觀察", "#9BA3AF"
+
                 st.markdown(f"""
                 <div style="background:#131722; border:1px solid #2A2E39; border-radius:12px; padding:15px; margin-bottom:10px;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <span style="color:white; font-size:18px; font-weight:bold;">{row['股票']} {row['名稱']}</span>
-                        <span style="color:{color}; font-size:20px; font-weight:bold;">{row['分數']} 分</span>
+                        <span style="color:{color}; font-size:18px; font-weight:bold;">{label} {row['分數']} 分</span>
                     </div>
                     <div style="color:#9BA3AF; font-size:14px; margin-top:8px;">
                         外資連買：{row['外資連買']} 天 ｜ 目前價格：{row['現價']} ｜ 偏離月線：{row['月線距離']}%
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+            
+            # 下載報表功能
+            st.download_button(
+                "📥 下載完整 AI 掃描報告 (CSV)",
+                df_res.to_csv(index=False).encode('utf-8-sig'),
+                f"AI_Scan_{datetime.now().strftime('%Y%m%d')}.csv",
+                "text/csv"
+            )
         else:
-            st.error("掃描過程中未發現符合條件的標的。")
-
+            st.error("掃描結束，未發現符合強勢門檻之標的。建議放寬評分邏輯。")
 
 
