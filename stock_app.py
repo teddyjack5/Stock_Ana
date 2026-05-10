@@ -251,70 +251,49 @@ def load_stock_pool():
 # ==========================================
 # 2. 法人籌碼與技術面掃描邏輯
 # ==========================================
-def fetch_stock_analysis(stock_id, df_info):
+def fetch_stock_analysis_with_debug(stock_id, df_info):
     try:
-        # 1. 判定市場
-        row = df_info[df_info['stock_id'] == str(stock_id)] # 確保 sid 是字串
+        # 1. 正規化與市場判定
+        sid = str(int(float(stock_id))) # 解決 2330.0 問題
+        row = df_info[df_info['stock_id'] == sid]
         if row.empty: return None
+        
         market = ".TW" if row.iloc[0]['market'] == "TSE" else ".TWO"
-        ticker = stock_id + market
+        ticker = sid + market
+        name = row.iloc[0]['stock_name']
 
-        # 2. 抓取價格 (加入重試機制或輕量化)
-        price_df = yf.download(ticker, period="2mo", interval="1d", progress=False)
+        # 2. 抓取價格
+        price_df = yf.download(ticker, period="2mo", progress=False)
         if price_df.empty: return None
         
-        # 💡 安全提取：解決 yfinance 可能產生的 MultiIndex 問題
-        if isinstance(price_df.columns, pd.MultiIndex):
-            price_df.columns = price_df.columns.get_level_values(0)
-            
-        close = price_df['Close'].dropna()
-        if close.empty: return None
-        
-        current_price = float(close.iloc[-1]) # 強制轉 float
-        prev_price = float(close.iloc[-2])
-        ma20 = float(close.rolling(20).mean().iloc[-1])
-        
-        # 3. 抓取法人籌碼
+        # 3. 抓取法人資料
         start_date = (datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
-        chip_df = dl.taiwan_stock_institutional_investors(stock_id=stock_id, start_date=start_date)
-        
+        chip_df = dl.taiwan_stock_institutional_investors(stock_id=sid, start_date=start_date)
         if chip_df is None or chip_df.empty: return None
-        
-        # 4. 計算外資連買 (streak)
-        # 修正：確保只抓 Foreign_Investor，避開其他含有 Foreign 字眼的類別
-        foreign = chip_df[chip_df['name'].str.contains('Foreign', case=False, na=False)]
+
+        # 4. 關鍵運算 (連買與技術指標)
+        foreign = chip_df[chip_df['name'].str.contains('Foreign', case=False)]
         daily_net = foreign.groupby('date').apply(lambda x: x['buy'].sum() - x['sell'].sum()).sort_index()
-        
         streak = 0
         for v in reversed(daily_net.tolist()):
             if v > 0: streak += 1
             else: break
-            
-        # 5. 評分邏輯 (優化權重)
-        score = 0
-        # 籌碼面 (最高 45)
-        score += min(streak * 15, 45) 
-        # 技術面 (站上月線 30)
-        if current_price > ma20: score += 30 
-        # 動能面 (今日強於昨日 25)
-        if current_price > prev_price: score += 25 
         
-        # 💡 額外獎勵：如果 RSI 強勢(選配) 或 創 20 日新高
-        if current_price >= close.tail(20).max():
-            score += 5 
+        current_price = float(price_df['Close'].iloc[-1])
+        ma20 = float(price_df['Close'].rolling(20).mean().iloc[-1])
+
+        # 5. 評分 (您可以依市場熱度放寬 RSI 或 門檻)
+        score = 0
+        score += min(streak * 15, 45) 
+        if current_price > ma20: score += 35
+        if current_price > price_df['Close'].iloc[-2]: score += 20
 
         return {
-            "股票": stock_id,
-            "名稱": row.iloc[0]['stock_name'],
-            "分數": score,
-            "外資連買": streak,
-            "現價": round(current_price, 2),
-            "月線距離": round(((current_price/ma20)-1)*100, 2)
+            "股票": sid, "名稱": name, "分數": score, 
+            "外資連買": streak, "現價": current_price, "MA20": ma20
         }
-    except Exception as e:
-        # print(f"分析 {stock_id} 出錯: {e}") # Debug 用
+    except:
         return None
-
 # =============================
 # 🔥 籌碼分析強化模組（NEW - 不影響原邏輯）
 # =============================
@@ -1679,100 +1658,62 @@ import streamlit as st
 from datetime import datetime, timedelta
 
 with tab_ai:
-    st.markdown('<div class="section-title">🤖 AI 選股：全台股法人籌碼強勢榜</div>', unsafe_allow_html=True)
+    st.markdown("### 🤖 全台股 AI 掃描模式")
     
-    # --- 1. 設定掃描範圍 ---
-    scan_mode = st.radio("掃描範圍", ["股票池 (Sheets)", "全台股 (上市櫃)"], horizontal=True)
+    # 讓使用者選擇範圍
+    scan_target = st.selectbox("選擇掃描範圍", ["我的股票池 (Sheets)", "全市場 (上市櫃股票)"])
     
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        # 如果選全台股，上限開放到 2000
-        max_limit = 2000 if scan_mode == "全台股 (上市櫃)" else 300
-        scan_limit = st.slider("掃描深度", 10, max_limit, 100, help="全市場掃描建議設定在 500 以上")
-    with col2:
-        if st.button("🚀 開始全市場掃描", type="primary"):
-            st.session_state.do_scan = True
-
-    if st.session_state.get('do_scan', False):
-        # --- 2. 準備股票清單 ---
+    # 動態調整 Slider 上限至 1800
+    scan_limit = st.slider("掃描標的數量", 10, 2000, 500)
+    
+    if st.button("🚀 啟動高效能掃描"):
         df_info = dl.taiwan_stock_info()
-        df_info['stock_id'] = df_info['stock_id'].astype(str) # 格式正規化
         
-        if scan_mode == "股票池 (Sheets)":
-            raw_pool = load_stock_pool()
-            # 處理 2330.0 問題
-            stock_list = [str(int(float(s))) if str(s).replace('.','').isdigit() else str(s) for s in raw_pool]
+        # 準備清單
+        if scan_target == "我的股票池 (Sheets)":
+            raw_list = load_stock_pool()
+            full_list = [str(s) for s in raw_list]
         else:
-            # 抓取全市場股票 (過濾掉權證與認購證)
-            stock_list = df_info[df_info['type'] == 'stock']['stock_id'].tolist()
-
-        # 根據 slider 限制數量
-        stock_list = stock_list[:scan_limit]
-        st.info(f"📊 啟動並行掃描：預計分析 {len(stock_list)} 檔標的")
+            # 排除權證，只留普通股
+            full_list = df_info[df_info['type'] == 'stock']['stock_id'].tolist()
+        
+        test_list = full_list[:scan_limit]
+        
+        st.info(f"⚡️ 啟動多執行緒並行運算 (Threads: 10)，預計分析 {len(test_list)} 檔標的...")
         
         results = []
         progress_bar = st.progress(0)
-        status_text = st.empty()
+        status = st.empty()
         
-        # --- 3. 多執行緒並行運算 (SIT 高效能模式) ---
-        # 使用 10 個執行緒同時運作，速度提升 5-10 倍
+        # --- 使用並行處理加速 ---
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            # 建立任務對照表
-            future_to_sid = {executor.submit(fetch_stock_analysis, sid, df_info): sid for sid in stock_list}
+            future_to_stock = {executor.submit(fetch_stock_analysis_with_debug, sid, df_info): sid for sid in test_list}
             
-            for i, future in enumerate(concurrent.futures.as_completed(future_to_sid)):
-                sid = future_to_sid[future]
-                try:
-                    res = future.result()
-                    if res and res.get('分數', 0) >= 40: # 只紀錄 40 分以上的，節省記憶體
-                        results.append(res)
-                except Exception as e:
-                    # 可以在這裡 print(f"Error {sid}: {e}") 進行除錯
-                    pass
+            for i, future in enumerate(concurrent.futures.as_completed(future_to_stock)):
+                res = future.result()
+                if res and res['分數'] >= 40: # 只紀錄有潛力的
+                    results.append(res)
                 
-                # 更新進度
-                progress = (i + 1) / len(stock_list)
-                progress_bar.progress(progress)
-                if i % 10 == 0: # 每 10 檔更新一次狀態，避免介面閃爍
-                    status_text.text(f"掃描進度: {i+1} / {len(stock_list)} (已發現 {len(results)} 檔績優股)")
+                # 更新進度條
+                if i % 10 == 0:
+                    pct = (i+1) / len(test_list)
+                    progress_bar.progress(pct)
+                    status.text(f"已掃描: {i+1} 檔 | 目前發現績優股: {len(results)} 檔")
 
-        status_text.success(f"✅ 全市場掃描完成！在 {len(stock_list)} 檔中篩選出 {len(results)} 檔符合初步條件。")
-        
-        # --- 4. 顯示 TradingView 風格結果 ---
+        # --- 顯示結果 ---
         if results:
             df_res = pd.DataFrame(results).sort_values(by="分數", ascending=False)
+            st.success(f"✅ 掃描完成！從 {len(test_list)} 檔中篩選出 {len(df_res)} 檔強勢股。")
             
-            # 顯示前 20 名最優標的
-            st.write("### 🏆 綜合評分 Top 20")
-            for _, row in df_res.head(20).iterrows():
-                # 動態判斷標籤顏色
-                if row['分數'] >= 75:
-                    label, color = "🔥 極強勢", "#00E676"
-                elif row['分數'] >= 60:
-                    label, color = "✅ 轉強", "#FFD54F"
-                else:
-                    label, color = "⚖️ 觀察", "#9BA3AF"
-
-                st.markdown(f"""
-                <div style="background:#131722; border:1px solid #2A2E39; border-radius:12px; padding:15px; margin-bottom:10px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span style="color:white; font-size:18px; font-weight:bold;">{row['股票']} {row['名稱']}</span>
-                        <span style="color:{color}; font-size:18px; font-weight:bold;">{label} {row['分數']} 分</span>
+            # 使用您的 TradingView 風格顯示卡片
+            for _, row in df_res.head(15).iterrows():
+                with st.container():
+                    st.markdown(f"""
+                    <div style="background:#131722; border-left: 5px solid #00E676; padding:15px; margin-bottom:10px; border-radius:5px;">
+                        <span style="color:white; font-size:18px;"><b>{row['股票']} {row['名稱']}</b></span>
+                        <span style="color:#00E676; float:right;"><b>AI 評分: {row['分數']}</b></span><br>
+                        <small style="color:#9BA3AF;">外資連買: {row['外資連買']}天 | 現價: {row['現價']} | MA20: {row['MA20']:.2f}</small>
                     </div>
-                    <div style="color:#9BA3AF; font-size:14px; margin-top:8px;">
-                        外資連買：{row['外資連買']} 天 ｜ 目前價格：{row['現價']} ｜ 偏離月線：{row['月線距離']}%
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # 下載報表功能
-            st.download_button(
-                "📥 下載完整 AI 掃描報告 (CSV)",
-                df_res.to_csv(index=False).encode('utf-8-sig'),
-                f"AI_Scan_{datetime.now().strftime('%Y%m%d')}.csv",
-                "text/csv"
-            )
-        else:
-            st.error("掃描結束，未發現符合強勢門檻之標的。建議放寬評分邏輯。")
+                    """, unsafe_allow_html=True)
 
 
