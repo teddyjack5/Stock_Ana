@@ -288,7 +288,7 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
         try:
 
             # --------------------------------
-            # 先嘗試 .TW
+            # 先測試 .TW
             # --------------------------------
             ticker = sid + ".TW"
 
@@ -446,7 +446,7 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
         try:
 
             start_date = (
-                datetime.now() - timedelta(days=20)
+                datetime.now() - timedelta(days=30)
             ).strftime('%Y-%m-%d')
 
             chip_df = dl.taiwan_stock_institutional_investors(
@@ -460,13 +460,108 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
                 f"籌碼資料 empty: {chip_df.empty}"
             )
 
+            foreign_buy_days = 0
+
+            if has_chip:
+
+                debug_logs.append(
+                    f"chip columns: {chip_df.columns.tolist()}"
+                )
+
+                # --------------------------------
+                # 找外資資料
+                # --------------------------------
+                foreign_df = chip_df[
+                    chip_df['name'].str.contains(
+                        "外資",
+                        na=False
+                    )
+                ].copy()
+
+                debug_logs.append(
+                    f"外資資料筆數: {len(foreign_df)}"
+                )
+
+                if not foreign_df.empty:
+
+                    # --------------------------------
+                    # 自動判斷欄位
+                    # --------------------------------
+                    buy_col = None
+                    sell_col = None
+
+                    if 'buy' in foreign_df.columns:
+                        buy_col = 'buy'
+
+                    elif 'buy_volume' in foreign_df.columns:
+                        buy_col = 'buy_volume'
+
+                    if 'sell' in foreign_df.columns:
+                        sell_col = 'sell'
+
+                    elif 'sell_volume' in foreign_df.columns:
+                        sell_col = 'sell_volume'
+
+                    debug_logs.append(
+                        f"buy_col: {buy_col}"
+                    )
+
+                    debug_logs.append(
+                        f"sell_col: {sell_col}"
+                    )
+
+                    if buy_col and sell_col:
+
+                        # 淨買超
+                        foreign_df['net_buy'] = (
+                            foreign_df[buy_col]
+                            - foreign_df[sell_col]
+                        )
+
+                        # 日期排序
+                        foreign_df = foreign_df.sort_values(
+                            'date',
+                            ascending=False
+                        )
+
+                        # 計算連買天數
+                        for val in foreign_df['net_buy']:
+
+                            if val > 0:
+                                foreign_buy_days += 1
+                            else:
+                                break
+
+                        debug_logs.append(
+                            f"外資連買天數: {foreign_buy_days}"
+                        )
+
+                    else:
+
+                        debug_logs.append(
+                            "❌ 找不到 buy/sell 欄位"
+                        )
+
         except Exception as e:
 
             has_chip = False
 
+            foreign_buy_days = 0
+
             debug_logs.append(
                 f"FinMind 錯誤: {str(e)}"
             )
+
+        # =========================
+        # AI 分數（簡單版）
+        # =========================
+        score = 0
+
+        if current_price > ma20:
+            score += 50
+
+        if foreign_buy_days >= 3:
+            score += 50
 
         # =========================
         # 回傳
@@ -477,9 +572,9 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
 
             "名稱": name,
 
-            "分數": 100 if has_price else 10,
+            "分數": score,
 
-            "外資連買": 0,
+            "外資連買": foreign_buy_days,
 
             "現價": round(current_price, 2),
 
