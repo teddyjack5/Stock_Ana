@@ -278,23 +278,15 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
         # =========================
         debug_logs = []
 
-        debug_logs.append(
-            f"df_info columns: {df_info.columns.tolist()}"
-        )
-
         # =========================
         # yfinance
         # =========================
         try:
 
             # --------------------------------
-            # 先測試 .TW
+            # 先抓 .TW
             # --------------------------------
             ticker = sid + ".TW"
-
-            debug_logs.append(
-                f"先測試 ticker: {ticker}"
-            )
 
             price_df = yf.download(
                 ticker,
@@ -304,16 +296,11 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
             )
 
             # --------------------------------
-            # 如果 .TW 抓不到
-            # 改抓 .TWO
+            # fallback -> .TWO
             # --------------------------------
             if price_df.empty:
 
                 ticker = sid + ".TWO"
-
-                debug_logs.append(
-                    f".TW 無資料 -> 改測試 {ticker}"
-                )
 
                 price_df = yf.download(
                     ticker,
@@ -323,11 +310,11 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
                 )
 
             debug_logs.append(
-                f"price_df empty: {price_df.empty}"
+                f"ticker: {ticker}"
             )
 
             debug_logs.append(
-                f"原始 columns: {str(price_df.columns)}"
+                f"price_df empty: {price_df.empty}"
             )
 
             # --------------------------------
@@ -335,106 +322,90 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
             # --------------------------------
             if isinstance(price_df.columns, pd.MultiIndex):
 
-                debug_logs.append(
-                    "偵測到 MultiIndex -> 開始壓平"
-                )
-
                 price_df.columns = (
                     price_df.columns.get_level_values(0)
                 )
 
             debug_logs.append(
-                f"壓平後 columns: {price_df.columns.tolist()}"
+                f"columns: {price_df.columns.tolist()}"
             )
 
             has_price = not price_df.empty
 
             current_price = 0.0
             ma20 = 0.0
+            volume_ratio = 0.0
 
             # =========================
-            # Close 處理
+            # 價格處理
             # =========================
             if has_price:
 
+                # --------------------------------
+                # Close
+                # --------------------------------
                 if 'Close' in price_df.columns:
 
-                    debug_logs.append(
-                        "✅ 找到 Close 欄位"
-                    )
-
-                    close_data = price_df['Close']
-
-                    debug_logs.append(
-                        f"Close type: {type(close_data)}"
-                    )
-
-                    # 如果還是 DataFrame
-                    if isinstance(close_data, pd.DataFrame):
-
-                        debug_logs.append(
-                            "Close 是 DataFrame -> 取第一欄"
-                        )
-
-                        close_series = close_data.iloc[:, 0]
-
-                    else:
-
-                        close_series = close_data
-
-                    # 強制數值化
                     close_series = pd.to_numeric(
-                        close_series,
+                        price_df['Close'],
                         errors='coerce'
                     ).dropna()
 
-                    debug_logs.append(
-                        f"Close 長度: {len(close_series)}"
-                    )
-
                     if len(close_series) > 0:
 
-                        # 現價
                         current_price = float(
                             close_series.iloc[-1]
                         )
 
-                        # MA20
                         ma20 = float(
                             close_series.tail(20).mean()
                         )
 
-                        debug_logs.append(
-                            f"現價: {current_price}"
+                # --------------------------------
+                # Volume
+                # --------------------------------
+                if 'Volume' in price_df.columns:
+
+                    volume_series = pd.to_numeric(
+                        price_df['Volume'],
+                        errors='coerce'
+                    ).dropna()
+
+                    if len(volume_series) >= 20:
+
+                        today_volume = float(
+                            volume_series.iloc[-1]
                         )
 
-                        debug_logs.append(
-                            f"MA20: {ma20}"
+                        avg_volume_20 = float(
+                            volume_series.tail(20).mean()
                         )
 
-                    else:
+                        if avg_volume_20 > 0:
 
-                        debug_logs.append(
-                            "❌ Close 全部 NaN"
-                        )
-
-                else:
-
-                    debug_logs.append(
-                        "❌ 找不到 Close 欄位"
-                    )
-
-            else:
+                            volume_ratio = (
+                                today_volume / avg_volume_20
+                            )
 
                 debug_logs.append(
-                    "❌ yfinance 完全抓不到資料"
+                    f"現價: {current_price}"
+                )
+
+                debug_logs.append(
+                    f"MA20: {ma20}"
+                )
+
+                debug_logs.append(
+                    f"量比: {round(volume_ratio, 2)}"
                 )
 
         except Exception as e:
 
             has_price = False
+
             current_price = 0.0
             ma20 = 0.0
+            volume_ratio = 0.0
 
             debug_logs.append(
                 f"yfinance 錯誤: {str(e)}"
@@ -461,15 +432,12 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
             )
 
             foreign_buy_days = 0
+            today_buy = False
 
             if has_chip:
 
-                debug_logs.append(
-                    f"chip columns: {chip_df.columns.tolist()}"
-                )
-
                 # --------------------------------
-                # 找外資資料
+                # 判斷欄位
                 # --------------------------------
                 target_col = 'name'
 
@@ -480,12 +448,13 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
                     f"target_col: {target_col}"
                 )
 
-                debug_logs.append(
-                    f"unique values: {chip_df[target_col].unique().tolist()}"
-                )
-
+                # --------------------------------
+                # 篩選外資
+                # --------------------------------
                 foreign_df = chip_df[
-                    chip_df[target_col].astype(str).str.contains(
+                    chip_df[target_col]
+                    .astype(str)
+                    .str.contains(
                         'Foreign|外資|外陸資',
                         case=False,
                         na=False
@@ -499,7 +468,7 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
                 if not foreign_df.empty:
 
                     # --------------------------------
-                    # 自動判斷欄位
+                    # buy/sell 欄位
                     # --------------------------------
                     buy_col = None
                     sell_col = None
@@ -524,36 +493,41 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
                         f"sell_col: {sell_col}"
                     )
 
+                    # --------------------------------
+                    # 計算淨買超
+                    # --------------------------------
                     if buy_col and sell_col:
 
-                        # 淨買超
                         foreign_df['net_buy'] = (
                             foreign_df[buy_col]
                             - foreign_df[sell_col]
                         )
 
-                        # 日期排序
                         foreign_df = foreign_df.sort_values(
                             'date',
                             ascending=False
                         )
 
-                        # 計算連買天數
-                        for val in foreign_df['net_buy']:
+                        # 最近5日
+                        recent_5 = foreign_df.head(5)
 
-                            if val > 0:
-                                foreign_buy_days += 1
-                            else:
-                                break
-
-                        debug_logs.append(
-                            f"外資連買天數: {foreign_buy_days}"
+                        foreign_buy_days = int(
+                            (recent_5['net_buy'] > 0).sum()
                         )
 
-                    else:
+                        # 今日是否買超
+                        if len(foreign_df) > 0:
+
+                            today_buy = (
+                                foreign_df.iloc[0]['net_buy'] > 0
+                            )
 
                         debug_logs.append(
-                            "❌ 找不到 buy/sell 欄位"
+                            f"最近5日外資買超天數: {foreign_buy_days}"
+                        )
+
+                        debug_logs.append(
+                            f"今日外資買超: {today_buy}"
                         )
 
         except Exception as e:
@@ -562,20 +536,80 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
 
             foreign_buy_days = 0
 
+            today_buy = False
+
             debug_logs.append(
                 f"FinMind 錯誤: {str(e)}"
             )
 
         # =========================
-        # AI 分數（簡單版）
+        # AI 評分系統
         # =========================
         score = 0
 
-        if current_price > ma20:
-            score += 50
+        score_reason = []
 
+        # --------------------------------
+        # 技術面
+        # --------------------------------
+        if current_price > ma20:
+
+            score += 40
+
+            score_reason.append("站上MA20")
+
+        # --------------------------------
+        # 外資
+        # --------------------------------
         if foreign_buy_days >= 3:
-            score += 50
+
+            score += 40
+
+            score_reason.append(
+                f"外資5日買超{foreign_buy_days}天"
+            )
+
+        # --------------------------------
+        # 今日外資
+        # --------------------------------
+        if today_buy:
+
+            score += 20
+
+            score_reason.append("今日外資買超")
+
+        # --------------------------------
+        # 量能
+        # --------------------------------
+        if volume_ratio >= 1.2:
+
+            score += 20
+
+            score_reason.append(
+                f"量比放大({volume_ratio:.2f})"
+            )
+
+        # 最高 100
+        score = min(score, 100)
+
+        # =========================
+        # 投資建議
+        # =========================
+        if score >= 80:
+
+            suggestion = "🔥 強勢關注"
+
+        elif score >= 60:
+
+            suggestion = "✅ 可觀察布局"
+
+        elif score >= 40:
+
+            suggestion = "⚠️ 中性觀察"
+
+        else:
+
+            suggestion = "❌ 偏弱"
 
         # =========================
         # 回傳
@@ -588,11 +622,19 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
 
             "分數": score,
 
-            "外資連買": foreign_buy_days,
+            "投資建議": suggestion,
+
+            "外資買超天數": foreign_buy_days,
+
+            "今日外資買超": today_buy,
 
             "現價": round(current_price, 2),
 
             "MA20": round(ma20, 2),
+
+            "量比": round(volume_ratio, 2),
+
+            "評分原因": " / ".join(score_reason),
 
             "資料狀態": f"價:{has_price}, 籌:{has_chip}",
 
