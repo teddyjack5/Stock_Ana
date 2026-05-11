@@ -471,9 +471,23 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
                 # --------------------------------
                 # 找外資資料
                 # --------------------------------
+                target_col = 'name'
+
+                if 'institutional_investors' in chip_df.columns:
+                    target_col = 'institutional_investors'
+
+                debug_logs.append(
+                    f"target_col: {target_col}"
+                )
+
+                debug_logs.append(
+                    f"unique values: {chip_df[target_col].unique().tolist()}"
+                )
+
                 foreign_df = chip_df[
-                    chip_df['name'].str.contains(
-                        "外資",
+                    chip_df[target_col].astype(str).str.contains(
+                        'Foreign|外資|外陸資',
+                        case=False,
                         na=False
                     )
                 ].copy()
