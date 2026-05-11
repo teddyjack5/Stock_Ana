@@ -284,6 +284,9 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
                 period="3mo",
                 progress=False
             )
+            st.write(price_df)
+            st.write(price_df.columns)
+            st.write(type(price_df['Close']))
 
             has_price = not price_df.empty
 
