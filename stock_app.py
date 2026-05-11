@@ -252,44 +252,127 @@ def load_stock_pool():
 # 2. 法人籌碼與技術面掃描邏輯
 # ==========================================
 def fetch_stock_analysis_with_debug(stock_id, df_info):
+
     try:
-        # 1. 基本檢查
+
         sid = str(int(float(stock_id)))
+
         row = df_info[df_info['stock_id'] == sid]
+
         if row.empty:
-            return {"股票": sid, "名稱": "查無此股", "分數": 0, "資料狀態": "對照表無資料"}
+            return {
+                "股票": sid,
+                "名稱": "查無此股",
+                "分數": 0,
+                "資料狀態": "對照表無資料"
+            }
 
         name = row.iloc[0]['stock_name']
-        
-        # --- 2. 測試 yfinance 連線 ---
-        try:
-            ticker = sid + (".TW" if row.iloc[0]['market'] == "TSE" else ".TWO")
-            price_df = yf.download(ticker, period="1mo", progress=False)
-            has_price = not price_df.empty
-        except:
-            has_price = False
 
-        # --- 3. 測試 FinMind 連線 ---
+        # =========================
+        # yfinance
+        # =========================
         try:
-            start_date = (datetime.now() - timedelta(days=20)).strftime('%Y-%m-%d')
-            chip_df = dl.taiwan_stock_institutional_investors(stock_id=sid, start_date=start_date)
+
+            ticker = sid + (
+                ".TW" if row.iloc[0]['market'] == "TSE"
+                else ".TWO"
+            )
+
+            price_df = yf.download(
+                ticker,
+                period="3mo",
+                progress=False
+            )
+
+            has_price = not price_df.empty
+
+            current_price = 0.0
+            ma20 = 0.0
+
+            if has_price:
+
+                # MultiIndex 修正
+                if isinstance(price_df.columns, pd.MultiIndex):
+                    price_df.columns = (
+                        price_df.columns.get_level_values(0)
+                    )
+
+                if 'Close' in price_df.columns:
+
+                    close_series = pd.to_numeric(
+                        price_df['Close'],
+                        errors='coerce'
+                    ).dropna()
+
+                    if len(close_series) > 0:
+
+                        current_price = float(
+                            close_series.iloc[-1]
+                        )
+
+                        ma20 = float(
+                            close_series.tail(20).mean()
+                        )
+
+        except Exception as e:
+
+            has_price = False
+            current_price = 0.0
+            ma20 = 0.0
+
+        # =========================
+        # FinMind
+        # =========================
+        try:
+
+            start_date = (
+                datetime.now() - timedelta(days=20)
+            ).strftime('%Y-%m-%d')
+
+            chip_df = dl.taiwan_stock_institutional_investors(
+                stock_id=sid,
+                start_date=start_date
+            )
+
             has_chip = not chip_df.empty
+
         except:
+
             has_chip = False
 
-        # --- 4. 強制回傳結果 (不論有沒有資料) ---
+        # =========================
+        # 回傳
+        # =========================
         return {
-            "股票": sid, 
-            "名稱": name, 
-            "分數": 100 if has_price else 10, # 只要有抓到價格就給 100 分，方便顯示
-            "外資連買": 0, 
-            "現價": 0.0, 
-            "MA20": 0.0,
+
+            "股票": sid,
+
+            "名稱": name,
+
+            "分數": 100 if has_price else 10,
+
+            "外資連買": 0,
+
+            "現價": round(current_price, 2),
+
+            "MA20": round(ma20, 2),
+
             "資料狀態": f"價:{has_price}, 籌:{has_chip}"
         }
+
     except Exception as e:
-        # 這是最後一道防線，萬一真的噴錯，把錯誤訊息傳回去
-        return {"股票": stock_id, "名稱": "系統錯誤", "分數": -1, "資料狀態": str(e)}
+
+        return {
+
+            "股票": stock_id,
+
+            "名稱": "系統錯誤",
+
+            "分數": -1,
+
+            "資料狀態": str(e)
+        }
 # =============================
 # 🔥 籌碼分析強化模組（NEW - 不影響原邏輯）
 # =============================
