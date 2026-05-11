@@ -2114,7 +2114,7 @@ with tab_ai:
                         <span style="color:{card_color}; font-size:18px;"><b>AI 評分: {row['分數']}</b></span>
                     </div>
                     <div style="color:#9BA3AF; font-size:14px; margin-top:5px;">
-                        外資連買: {row['外資連買']}天 ｜ 現價: {row['現價']} ｜ MA20: {row['MA20']:.2f}
+                        外資連買: {row['外資買超天數']}天 ｜ 現價: {row['現價']} ｜ MA20: {row['MA20']:.2f}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
