@@ -274,33 +274,54 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
         name = row.iloc[0]['stock_name']
 
         # =========================
-        # DEBUG 容器
+        # DEBUG LOG
         # =========================
         debug_logs = []
+
+        debug_logs.append(
+            f"df_info columns: {df_info.columns.tolist()}"
+        )
 
         # =========================
         # yfinance
         # =========================
         try:
 
-            ticker = sid + (
-                ".TW"
-                if row.iloc[0]['market'] == "TSE"
-                else ".TWO"
+            # --------------------------------
+            # 先嘗試 .TW
+            # --------------------------------
+            ticker = sid + ".TW"
+
+            debug_logs.append(
+                f"先測試 ticker: {ticker}"
             )
 
-            debug_logs.append(f"Ticker: {ticker}")
-
-            # 抓價格
             price_df = yf.download(
                 ticker,
                 period="3mo",
-                progress=False
+                progress=False,
+                auto_adjust=False
             )
 
-            # =========================
-            # DEBUG
-            # =========================
+            # --------------------------------
+            # 如果 .TW 抓不到
+            # 改抓 .TWO
+            # --------------------------------
+            if price_df.empty:
+
+                ticker = sid + ".TWO"
+
+                debug_logs.append(
+                    f".TW 無資料 -> 改測試 {ticker}"
+                )
+
+                price_df = yf.download(
+                    ticker,
+                    period="3mo",
+                    progress=False,
+                    auto_adjust=False
+                )
+
             debug_logs.append(
                 f"price_df empty: {price_df.empty}"
             )
@@ -309,9 +330,9 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
                 f"原始 columns: {str(price_df.columns)}"
             )
 
-            # =========================
-            # MultiIndex 修正
-            # =========================
+            # --------------------------------
+            # MultiIndex flatten
+            # --------------------------------
             if isinstance(price_df.columns, pd.MultiIndex):
 
                 debug_logs.append(
@@ -323,7 +344,7 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
                 )
 
             debug_logs.append(
-                f"壓平後 columns: {str(price_df.columns.tolist())}"
+                f"壓平後 columns: {price_df.columns.tolist()}"
             )
 
             has_price = not price_df.empty
@@ -338,7 +359,9 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
 
                 if 'Close' in price_df.columns:
 
-                    debug_logs.append("找到 Close 欄位")
+                    debug_logs.append(
+                        "✅ 找到 Close 欄位"
+                    )
 
                     close_data = price_df['Close']
 
@@ -350,7 +373,7 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
                     if isinstance(close_data, pd.DataFrame):
 
                         debug_logs.append(
-                            "Close 是 DataFrame -> 轉第一欄"
+                            "Close 是 DataFrame -> 取第一欄"
                         )
 
                         close_series = close_data.iloc[:, 0]
@@ -359,22 +382,24 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
 
                         close_series = close_data
 
-                    # 數值轉換
+                    # 強制數值化
                     close_series = pd.to_numeric(
                         close_series,
                         errors='coerce'
                     ).dropna()
 
                     debug_logs.append(
-                        f"Close 筆數: {len(close_series)}"
+                        f"Close 長度: {len(close_series)}"
                     )
 
                     if len(close_series) > 0:
 
+                        # 現價
                         current_price = float(
                             close_series.iloc[-1]
                         )
 
+                        # MA20
                         ma20 = float(
                             close_series.tail(20).mean()
                         )
@@ -390,7 +415,7 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
                     else:
 
                         debug_logs.append(
-                            "Close 全部是 NaN"
+                            "❌ Close 全部 NaN"
                         )
 
                 else:
@@ -402,7 +427,7 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
             else:
 
                 debug_logs.append(
-                    "❌ price_df 是空的"
+                    "❌ yfinance 完全抓不到資料"
                 )
 
         except Exception as e:
@@ -416,7 +441,7 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
             )
 
         # =========================
-        # FinMind
+        # FinMind 籌碼
         # =========================
         try:
 
@@ -462,7 +487,7 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
 
             "資料狀態": f"價:{has_price}, 籌:{has_chip}",
 
-            # 🔥 DEBUG
+            # DEBUG
             "DEBUG": " | ".join(debug_logs)
         }
 
