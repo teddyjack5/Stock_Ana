@@ -255,11 +255,15 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
 
     try:
 
+        # =========================
+        # 基本資料
+        # =========================
         sid = str(int(float(stock_id)))
 
         row = df_info[df_info['stock_id'] == sid]
 
         if row.empty:
+
             return {
                 "股票": sid,
                 "名稱": "查無此股",
@@ -270,43 +274,100 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
         name = row.iloc[0]['stock_name']
 
         # =========================
+        # DEBUG 容器
+        # =========================
+        debug_logs = []
+
+        # =========================
         # yfinance
         # =========================
         try:
 
             ticker = sid + (
-                ".TW" if row.iloc[0]['market'] == "TSE"
+                ".TW"
+                if row.iloc[0]['market'] == "TSE"
                 else ".TWO"
             )
 
+            debug_logs.append(f"Ticker: {ticker}")
+
+            # 抓價格
             price_df = yf.download(
                 ticker,
                 period="3mo",
                 progress=False
             )
-            st.write(price_df)
-            st.write(price_df.columns)
-            st.write(type(price_df['Close']))
+
+            # =========================
+            # DEBUG
+            # =========================
+            debug_logs.append(
+                f"price_df empty: {price_df.empty}"
+            )
+
+            debug_logs.append(
+                f"原始 columns: {str(price_df.columns)}"
+            )
+
+            # =========================
+            # MultiIndex 修正
+            # =========================
+            if isinstance(price_df.columns, pd.MultiIndex):
+
+                debug_logs.append(
+                    "偵測到 MultiIndex -> 開始壓平"
+                )
+
+                price_df.columns = (
+                    price_df.columns.get_level_values(0)
+                )
+
+            debug_logs.append(
+                f"壓平後 columns: {str(price_df.columns.tolist())}"
+            )
 
             has_price = not price_df.empty
 
             current_price = 0.0
             ma20 = 0.0
 
+            # =========================
+            # Close 處理
+            # =========================
             if has_price:
-
-                # MultiIndex 修正
-                if isinstance(price_df.columns, pd.MultiIndex):
-                    price_df.columns = (
-                        price_df.columns.get_level_values(0)
-                    )
 
                 if 'Close' in price_df.columns:
 
+                    debug_logs.append("找到 Close 欄位")
+
+                    close_data = price_df['Close']
+
+                    debug_logs.append(
+                        f"Close type: {type(close_data)}"
+                    )
+
+                    # 如果還是 DataFrame
+                    if isinstance(close_data, pd.DataFrame):
+
+                        debug_logs.append(
+                            "Close 是 DataFrame -> 轉第一欄"
+                        )
+
+                        close_series = close_data.iloc[:, 0]
+
+                    else:
+
+                        close_series = close_data
+
+                    # 數值轉換
                     close_series = pd.to_numeric(
-                        price_df['Close'],
+                        close_series,
                         errors='coerce'
                     ).dropna()
+
+                    debug_logs.append(
+                        f"Close 筆數: {len(close_series)}"
+                    )
 
                     if len(close_series) > 0:
 
@@ -318,11 +379,41 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
                             close_series.tail(20).mean()
                         )
 
+                        debug_logs.append(
+                            f"現價: {current_price}"
+                        )
+
+                        debug_logs.append(
+                            f"MA20: {ma20}"
+                        )
+
+                    else:
+
+                        debug_logs.append(
+                            "Close 全部是 NaN"
+                        )
+
+                else:
+
+                    debug_logs.append(
+                        "❌ 找不到 Close 欄位"
+                    )
+
+            else:
+
+                debug_logs.append(
+                    "❌ price_df 是空的"
+                )
+
         except Exception as e:
 
             has_price = False
             current_price = 0.0
             ma20 = 0.0
+
+            debug_logs.append(
+                f"yfinance 錯誤: {str(e)}"
+            )
 
         # =========================
         # FinMind
@@ -340,9 +431,17 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
 
             has_chip = not chip_df.empty
 
-        except:
+            debug_logs.append(
+                f"籌碼資料 empty: {chip_df.empty}"
+            )
+
+        except Exception as e:
 
             has_chip = False
+
+            debug_logs.append(
+                f"FinMind 錯誤: {str(e)}"
+            )
 
         # =========================
         # 回傳
@@ -361,7 +460,10 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
 
             "MA20": round(ma20, 2),
 
-            "資料狀態": f"價:{has_price}, 籌:{has_chip}"
+            "資料狀態": f"價:{has_price}, 籌:{has_chip}",
+
+            # 🔥 DEBUG
+            "DEBUG": " | ".join(debug_logs)
         }
 
     except Exception as e:
@@ -374,7 +476,9 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
 
             "分數": -1,
 
-            "資料狀態": str(e)
+            "資料狀態": str(e),
+
+            "DEBUG": f"最外層錯誤: {str(e)}"
         }
 # =============================
 # 🔥 籌碼分析強化模組（NEW - 不影響原邏輯）
