@@ -253,119 +253,113 @@ def load_stock_pool():
 # ==========================================
 def fetch_stock_analysis_with_debug(stock_id, df_info):
     try:
+        # =========================
+        # 基本資料清洗
+        # =========================
         sid = str(int(float(stock_id)))
         row = df_info[df_info['stock_id'] == sid]
-        if row.empty: return {"股票": sid, "名稱": "查無此股", "分數": 0, "資料狀態": "對照表無資料"}
+        if row.empty:
+            return {
+                "股票": sid, "名稱": "查無此股", "分數": 0,
+                "投資建議": "❌ 無此股票資料", "資料狀態": "對照表無資料"
+            }
+
         name = row.iloc[0]['stock_name']
         debug_logs = []
+
+        # =========================
+        # yfinance 價量下載 (拉長到 3mo 確保足夠計算 2 周前)
+        # =========================
+        ticker = sid + ".TW"
+        price_df = yf.download(ticker, period="3mo", progress=False, auto_adjust=False)
+
+        if price_df.empty:
+            ticker = sid + ".TWO"
+            price_df = yf.download(ticker, period="3mo", progress=False, auto_adjust=False)
+
+        debug_logs.append(f"ticker: {ticker}")
+
+        # 攤平 MultiIndex columns
+        if isinstance(price_df.columns, pd.MultiIndex):
+            price_df.columns = price_df.columns.get_level_values(0)
+
+        # =========================
+        # 核心選股條件計算
+        # =========================
+        price_1w_ago = 0.0
+        price_2w_ago = 0.0
+        today_volume_lots = 0.0
+        capital_billions = 0.0
         
-        # 初始篩選狀態標記
-        pass_momentum_filter = False
-        pass_capital_filter = False
-        pass_volume_filter = False
-        
-        # yfinance 數據處理
-        try:
-            ticker_str = sid + ".TW"
-            # 為了拿到2周前的數據，period 改為 1mo (一個月)
-            price_df = yf.download(ticker_str, period="1mo", progress=False, auto_adjust=False)
-            if price_df.empty:
-                ticker_str = sid + ".TWO"
-                price_df = yf.download(ticker_str, period="1mo", progress=False, auto_adjust=False)
+        cond_price = False
+        cond_capital = False
+        cond_volume = False
+
+        if not price_df.empty and 'Close' in price_df.columns and 'Volume' in price_df.columns:
+            close_series = pd.to_numeric(price_df['Close'], errors='coerce').dropna()
+            volume_series = pd.to_numeric(price_df['Volume'], errors='coerce').dropna()
             
-            if isinstance(price_df.columns, pd.MultiIndex): 
-                price_df.columns = price_df.columns.get_level_values(0)
-            
-            has_price = not price_df.empty
-            current_price, ma20, volume_ratio = 0.0, 0.0, 0.0
-            
-            if has_price and 'Close' in price_df.columns:
-                close_series = pd.to_numeric(price_df['Close'], errors='coerce').dropna()
-                volume_series = pd.to_numeric(price_df['Volume'], errors='coerce').dropna()
+            # 確保資料長度大於 11 天 (才有 2 周前的一條龍數據)
+            if len(close_series) >= 11:
+                price_1w_ago = float(close_series.iloc[-6])   # 5個交易日日前 (1周前)
+                price_2w_ago = float(close_series.iloc[-11])  # 10個交易日日前 (2周前)
+                today_volume_lots = float(volume_series.iloc[-1]) / 1000 # 股轉成「張」
                 
-                if len(close_series) >= 10:
-                    # 1周前收盤價 (倒數第5個交易日) 與 2周前收盤價 (倒數第10個交易日)
-                    close_1w = float(close_series.iloc[-5])
-                    close_2w = float(close_series.iloc[-10])
-                    
-                    # ✅ 條件 1：1周前收盤價 >= 2周前收盤價 * 1.2
-                    if close_1w >= (close_2w * 1.2):
-                        pass_momentum_filter = True
-                    
-                    current_price = float(close_series.iloc[-1])
-                    ma20 = float(close_series.tail(20).mean()) if len(close_series) >= 20 else current_price
-                
-                if len(volume_series) > 0:
-                    today_volume_shares = float(volume_series.iloc[-1])
-                    # ✅ 條件 3：日成交量 >= 1000張 (1,000 * 1,000股 = 1,000,000股)
-                    if today_volume_shares >= 1000000:
-                        pass_volume_filter = True
-                        
-                    if len(volume_series) >= 20:
-                        avg_vol = float(volume_series.tail(20).mean())
-                        if avg_vol > 0: volume_ratio = today_volume_shares / avg_vol
+                # 線上取得總股數並換算成 股本(億) -> 台灣面額通常為10元
+                try:
+                    ticker_obj = yf.Ticker(ticker)
+                    shares = ticker_obj.fast_info.get('shares_outstanding', 0)
+                    capital_billions = (shares * 10) / 100,000,000  # 換算成「億」
+                except:
+                    capital_billions = 0.0
 
-            # ✅ 條件 2：股本(億) >= 2 
-            # 透過 yfinance Ticker 抓取基本面資料
-            try:
-                ticker_api = yf.Ticker(ticker_str)
-                shares = ticker_api.info.get('sharesOutstanding', 0)
-                if shares > 0:
-                    capital_billion = (shares * 10) / 100000000
-                    if capital_billion >= 2.0:
-                        pass_capital_filter = True
-                else:
-                    # 如果 yfinance 沒抓到股本，給予預設通過或從 df_info 判斷（此處預設寬容通過避免錯殺）
-                    pass_capital_filter = True 
-            except:
-                pass_capital_filter = True # API 異常時防呆通過
+                # 判定三大條件
+                cond_price = price_1w_ago >= (price_2w_ago * 1.2)
+                cond_capital = capital_billions >= 2.0
+                cond_volume = today_volume_lots >= 1000
 
-        except Exception as e:
-            has_price, current_price, ma20, volume_ratio = False, 0.0, 0.0, 0.0
-            debug_logs.append(f"yf_err: {str(e)}")
+        # =========================
+        # 嚴格篩選與評分 (必須滿足所有 而且(AND) 條件)
+        # =========================
+        score_reason = []
+        if cond_price: score_reason.append("1周前比2周前漲20%")
+        if cond_capital: score_reason.append(f"股本達標({capital_billions:.1f}億)")
+        if cond_volume: score_reason.append(f"成交量達標({int(today_volume_lots)}張)")
 
-        # FinMind 籌碼處理
-        try:
-            chip_df = dl.taiwan_stock_institutional_investors(stock_id=sid, start_date=(datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'))
-            has_chip = not chip_df.empty
-            foreign_buy_days, today_buy = 0, False
-            if has_chip:
-                target_col = 'institutional_investors' if 'institutional_investors' in chip_df.columns else 'name'
-                foreign_df = chip_df[chip_df[target_col].astype(str).str.contains('Foreign|外資|外陸資', case=False, na=False)].copy()
-                if not foreign_df.empty:
-                    buy_col = 'buy' if 'buy' in foreign_df.columns else 'buy_volume'
-                    sell_col = 'sell' if 'sell' in foreign_df.columns else 'sell_volume'
-                    if buy_col and sell_col:
-                        foreign_df['net_buy'] = foreign_df[buy_col] - foreign_df[sell_col]
-                        foreign_df = foreign_df.sort_values('date', ascending=False)
-                        foreign_buy_days = int((foreign_df.head(5)['net_buy'] > 0).sum())
-                        today_buy = foreign_df.iloc[0]['net_buy'] > 0
-        except Exception as e:
-            has_chip, foreign_buy_days, today_buy = False, 0, False
-            debug_logs.append(f"fm_err: {str(e)}")
-
-        # 評分系統
-        score, reason = 0, []
-        if current_price > ma20: score += 40; reason.append("站上MA20")
-        if foreign_buy_days >= 3: score += 40; reason.append(f"外資5日買超{foreign_buy_days}天")
-        if today_buy: score += 20; reason.append("今日外資買超")
-        if volume_ratio >= 1.2: score += 20; reason.append(f"量比放大({volume_ratio:.2f})")
-        score = min(score, 100)
-
-        # 結合全新三大篩選條件，若不符合則直接過濾或調降評級
-        if pass_momentum_filter and pass_capital_filter and pass_volume_filter:
-            suggestion = "🔥 強勢動能突破股"
+        # 三個條件全過給 100 分納入清單，否則 0 分排除
+        if cond_price and cond_capital and cond_volume:
+            score = 100
+            suggestion = "🔥 強勢符合選股條件"
         else:
-            score = int(score * 0.3) # 未達指標則大幅扣分
-            suggestion = "⚠️ 未達動能篩選標準"
+            score = 0
+            suggestion = "❌ 未全面符合"
+            # 幫忙記錄哪一個條件沒過，方便您看報表 Debug
+            fail_reasons = []
+            if not cond_price: fail_reasons.append("漲幅未達20%")
+            if not cond_capital: fail_reasons.append(f"股本不足({capital_billions:.1f}億)")
+            if not cond_volume: fail_reasons.append(f"成交量不足({int(today_volume_lots)}張)")
+            score_reason.append(f"未過原因: {', '.join(fail_reasons)}")
 
         return {
-            "股票": sid, "名稱": name, "分數": score, "投資建議": suggestion, "外資買超天數": foreign_buy_days,
-            "今日外資買超": today_buy, "現價": round(current_price, 2), "MA20": round(ma20, 2), "量比": round(volume_ratio, 2),
-            "評分原因": " / ".join(reason), "資料狀態": f"價:{has_price}, 籌:{has_chip}", "DEBUG": " | ".join(debug_logs)
+            "股票": sid,
+            "名稱": name,
+            "分數": score,
+            "投資建議": suggestion,
+            "1周前收盤": round(price_1w_ago, 2),
+            "2周前收盤": round(price_2w_ago, 2),
+            "股本(億)": round(capital_billions, 2),
+            "今日成交量(張)": int(today_volume_lots),
+            "評分原因": " / ".join(score_reason),
+            "資料狀態": f"歷史K線共{len(price_df)}天",
+            "DEBUG": " | ".join(debug_logs)
         }
+
     except Exception as e:
-        return {"股票": stock_id, "名稱": "系統錯誤", "分數": -1, "資料狀態": str(e), "DEBUG": f"ERR: {str(e)}"}
+        return {
+            "股票": stock_id, "名稱": "系統錯誤", "分數": -1,
+            "投資建議": "⚠️ 執行異常", "資料狀態": str(e),
+            "DEBUG": f"最外層錯誤: {str(e)}"
+        }
 # =============================
 # 🔥 籌碼分析強化模組（NEW - 不影響原邏輯）
 # =============================
