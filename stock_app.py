@@ -1744,16 +1744,33 @@ with tab_ai:
         # --- 3. 顯示診斷報告 (確認資料有無抓到) ---
         with st.expander("🔍 掃描診斷報告 (確認資料有無抓到)"):
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("成功抓取", stats["成功抓取"])
-            c2.metric("API 空值/過濾", stats["API回傳空值"])
+            c1.metric("成功抓取 (通過篩選)", stats["成功抓取"])
+            c2.metric("API 空值/被過濾", stats["API回傳空值"])
             c3.metric("系統異常", stats["系統噴錯"])
             c4.metric("低分過濾", stats["分數未達標"])
             
-            if sample_data:
-                st.write("✅ **資料抓取成功範例 (來自 API 的真實數據):**")
-                st.json(sample_data) # 顯示第一筆資料的所有欄位
+            # 💡 新增：核心原因診斷看板
+            st.markdown("---")
+            st.markdown("### 🛠️ 工程師 Debug 診斷面板")
+            
+            # 情境 A：完全是 API 問題（連一檔個股的影子都沒抓到）
+            if stats["成功抓取"] == 0 and sample_data is None:
+                st.error("🚨 【診斷結果：API 連線/限流問題】")
+                st.write("👉 **原因：** 程式完全沒有成功觸發任何一檔股票的回傳。")
+                st.write("👉 **對策：** 100% 是 `yfinance` 被限流、IP 被鎖，或是開盤時間資料庫有空值。請試著將 `max_workers` 降到 3 ~ 5，或者等 5 分鐘後再試。")
+            
+            # 情境 B：API 其實有抓到，但被後端條件全部淘汰了
+            elif sample_data is not None and len(results) == 0:
+                st.warning("🎯 【診斷結果：策略過濾太嚴格，無股票達標】")
+                st.write("👉 **原因：** API 運作完全正常！我有成功抓到資料，以下是其中一檔的真實數據：")
+                st.json(sample_data) # 把這檔的價量印出來給您看
+                st.write("👉 **對策：** 代表目前市場上沒有股票『同時滿足』股本 > 2億且成交量 > 1000張。這是正常的選股結果，不是系統壞掉喔！")
+            
+            # 情境 C：正常有抓到資料
             else:
-                st.error("❌ 完全沒有符合條件的資料。可能原因：無股票達標、假日 API 未更新或 yfinance 被限流。")
+                if sample_data:
+                    st.write("✅ **最新一筆成功抓取範例：**")
+                    st.json(sample_data)
 
         # 4. 顯示結果卡片
         if results:
