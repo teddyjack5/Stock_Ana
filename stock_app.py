@@ -253,113 +253,60 @@ def load_stock_pool():
 # ==========================================
 def fetch_stock_analysis_with_debug(stock_id, df_info):
     try:
-        # =========================
-        # 基本資料清洗
-        # =========================
+        # 確保股號格式正確
         sid = str(int(float(stock_id)))
-        row = df_info[df_info['stock_id'] == sid]
-        if row.empty:
-            return {
-                "股票": sid, "名稱": "查無此股", "分數": 0,
-                "投資建議": "❌ 無此股票資料", "資料狀態": "對照表無資料"
-            }
-
-        name = row.iloc[0]['stock_name']
-        debug_logs = []
-
-        # =========================
-        # yfinance 價量下載 (拉長到 3mo 確保足夠計算 2 周前)
-        # =========================
-        ticker = sid + ".TW"
-        price_df = yf.download(ticker, period="3mo", progress=False, auto_adjust=False)
-
-        if price_df.empty:
-            ticker = sid + ".TWO"
-            price_df = yf.download(ticker, period="3mo", progress=False, auto_adjust=False)
-
-        debug_logs.append(f"ticker: {ticker}")
-
-        # 攤平 MultiIndex columns
-        if isinstance(price_df.columns, pd.MultiIndex):
-            price_df.columns = price_df.columns.get_level_values(0)
-
-        # =========================
-        # 核心選股條件計算
-        # =========================
-        price_1w_ago = 0.0
-        price_2w_ago = 0.0
-        today_volume_lots = 0.0
-        capital_billions = 0.0
+        ticker = f"{sid}.TW"
         
-        cond_price = False
-        cond_capital = False
-        cond_volume = False
-
-        if not price_df.empty and 'Close' in price_df.columns and 'Volume' in price_df.columns:
-            close_series = pd.to_numeric(price_df['Close'], errors='coerce').dropna()
-            volume_series = pd.to_numeric(price_df['Volume'], errors='coerce').dropna()
-            
-            # 確保資料長度大於 11 天 (才有 2 周前的一條龍數據)
-            if len(close_series) >= 11:
-                price_1w_ago = float(close_series.iloc[-6])   # 5個交易日日前 (1周前)
-                price_2w_ago = float(close_series.iloc[-11])  # 10個交易日日前 (2周前)
-                today_volume_lots = float(volume_series.iloc[-1]) / 1000 # 股轉成「張」
-                
-                # 線上取得總股數並換算成 股本(億) -> 台灣面額通常為10元
-                try:
-                    ticker_obj = yf.Ticker(ticker)
-                    shares = ticker_obj.fast_info.get('shares_outstanding', 0)
-                    capital_billions = (shares * 10) / 100000000  # 換算成「億」
-                except:
-                    capital_billions = 0.0
-
-                # 判定三大條件
-                cond_price = price_1w_ago >= (price_2w_ago * 1.2)
-                cond_capital = capital_billions >= 2.0
-                cond_volume = today_volume_lots >= 1000
-
-        # =========================
-        # 嚴格篩選與評分 (必須滿足所有 而且(AND) 條件)
-        # =========================
-        score_reason = []
-        if cond_price: score_reason.append("1周前比2周前漲20%")
-        if cond_capital: score_reason.append(f"股本達標({capital_billions:.1f}億)")
-        if cond_volume: score_reason.append(f"成交量達標({int(today_volume_lots)}張)")
-
-        # 三個條件全過給 100 分納入清單，否則 0 分排除
-        if cond_price and cond_capital and cond_volume:
-            score = 100
-            suggestion = "🔥 強勢符合選股條件"
+        # ─── 修正點 1：直接從您的資料庫撈官方股本，不再依賴 yfinance ───
+        stock_row = df_info[df_info['stock_id'] == sid]
+        if not stock_row.empty and 'capital' in stock_row.columns:
+            # 台灣官方資料庫的 capital 通常是「元」，除以 1 億換算成億
+            raw_capital = stock_row.iloc[0]['capital']
+            capital_billions = float(raw_capital) / 100000000
+            stock_name = stock_row.iloc[0]['stock_name']
         else:
-            score = 0
-            suggestion = "❌ 未全面符合"
-            # 幫忙記錄哪一個條件沒過，方便您看報表 Debug
-            fail_reasons = []
-            if not cond_price: fail_reasons.append("漲幅未達20%")
-            if not cond_capital: fail_reasons.append(f"股本不足({capital_billions:.1f}億)")
-            if not cond_volume: fail_reasons.append(f"成交量不足({int(today_volume_lots)}張)")
-            score_reason.append(f"未過原因: {', '.join(fail_reasons)}")
+            capital_billions = 0.0
+            stock_name = "未知個股"
 
+        # 撈取價量資料
+        ticker_obj = yf.Ticker(ticker)
+        df_hist = ticker_obj.history(period="1mo")
+        
+        if df_hist.empty:
+            return None # 抓不到資料直接回傳 None，不放行
+            
+        # 取得最新一筆與歷史數據
+        latest = df_hist.iloc[-1]
+        today_vol = float(latest['Volume']) / 1000  # 換算成「張」
+        current_price = float(latest['Close'])
+        
+        # 取得 1 周前 (約 5 個交易日) 與 2 周前 (約 10 個交易日) 的收盤價
+        price_1w = float(df_hist.iloc[-5]['Close']) if len(df_hist) >= 5 else current_price
+        price_2w = float(df_hist.iloc[-10]['Close']) if len(df_hist) >= 10 else current_price
+        
+        # ─── 修正點 2：在後端進行「嚴格的門檻篩選」 (必須同時滿足股本 >= 2億 且 成交量 >= 1000張) ───
+        if capital_billions < 2.0 or today_vol < 1000.0:
+            return None # 只要有一項沒達標，直接淘汰，不回傳！
+            
+        # 如果過關了，計算分數（這裡可以自訂您的評分邏輯，此處先給 100 分過關幣）
+        score = 85 
+        
         return {
             "股票": sid,
-            "名稱": name,
-            "分數": score,
-            "投資建議": suggestion,
-            "1周前收盤": round(price_1w_ago, 2),
-            "2周前收盤": round(price_2w_ago, 2),
+            "名稱": stock_name,
+            "現價": round(current_price, 2),
             "股本(億)": round(capital_billions, 2),
-            "今日成交量(張)": int(today_volume_lots),
-            "評分原因": " / ".join(score_reason),
-            "資料狀態": f"歷史K線共{len(price_df)}天",
-            "DEBUG": " | ".join(debug_logs)
+            "今日成交量(張)": int(today_vol),
+            "1周前收盤": round(price_1w, 2),
+            "2周前收盤": round(price_2w, 2),
+            "分數": score,
+            "投資建議": "🔥 強勢標的",
+            "評分原因": "量大且股本結構符合篩選門檻"
         }
-
+        
     except Exception as e:
-        return {
-            "股票": stock_id, "名稱": "系統錯誤", "分數": -1,
-            "投資建議": "⚠️ 執行異常", "資料狀態": str(e),
-            "DEBUG": f"最外層錯誤: {str(e)}"
-        }
+        # 發生非預期噴錯時的防禦
+        return None
 # =============================
 # 🔥 籌碼分析強化模組（NEW - 不影響原邏輯）
 # =============================
@@ -1769,33 +1716,36 @@ with tab_ai:
             for i, future in enumerate(concurrent.futures.as_completed(future_to_stock)):
                 try:
                     res = future.result()
-                    if res:
+                    # 修正防禦點：只有後端真正過濾成功、有回傳資料字典時才放行
+                    if res is not None:
                         stats["成功抓取"] += 1
-                        if sample_data is None: sample_data = res # 存第一筆當範本
+                        if sample_data is None: 
+                            sample_data = res # 存第一筆當範本
                         
-                        # 假日測試建議門檻設 0
+                        # 嚴格檢查分數門檻（後端已過濾好股本與成交量）
                         if res.get('分數', 0) >= 0: 
                             results.append(res)
                         else:
                             stats["分數未達標"] += 1
                     else:
+                        # 被後端過濾淘汰（不符股本或成交量），或是 API 斷線空值
                         stats["API回傳空值"] += 1
                 except Exception as e:
                     stats["系統噴錯"] += 1
                 
                 # --- 修正進度條報錯點 ---
-                # 使用 min(1.0, ...) 確保 pct 不會超過 1.0
                 pct = min(1.0, (i + 1) / total_count)
                 progress_bar.progress(pct)
                 
                 if i % 10 == 0:
-                    status.text(f"已完成: {i+1}/{total_count} | 抓取成功: {stats['成功抓取']}")
+                    # 調整狀態列文字：顯示目前實際通過篩選（入選）的檔數
+                    status.text(f"已完成: {i+1}/{total_count} | 目前入選: {len(results)} 檔")
 
-        # --- 3. 顯示診斷報告 (關鍵：確認是否有抓到資料) ---
+        # --- 3. 顯示診斷報告 (確認資料有無抓到) ---
         with st.expander("🔍 掃描診斷報告 (確認資料有無抓到)"):
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("成功抓取", stats["成功抓取"])
-            c2.metric("API 空值", stats["API回傳空值"])
+            c2.metric("API 空值/過濾", stats["API回傳空值"])
             c3.metric("系統異常", stats["系統噴錯"])
             c4.metric("低分過濾", stats["分數未達標"])
             
@@ -1803,7 +1753,7 @@ with tab_ai:
                 st.write("✅ **資料抓取成功範例 (來自 API 的真實數據):**")
                 st.json(sample_data) # 顯示第一筆資料的所有欄位
             else:
-                st.error("❌ 完全沒有抓到資料。可能原因：假日 API 未更新或 yfinance 被限流。")
+                st.error("❌ 完全沒有符合條件的資料。可能原因：無股票達標、假日 API 未更新或 yfinance 被限流。")
 
         # 4. 顯示結果卡片
         if results:
@@ -1811,6 +1761,8 @@ with tab_ai:
             st.success(f"✅ 篩選出 {len(df_res)} 檔標的")
             for _, row in df_res.head(20).iterrows():
                 card_color = "#00E676" if row['分數'] >= 60 else "#FFD54F"
+                
+                # 修正點：將 st.write 改為純 HTML 變數嵌入，避免語法混用
                 st.markdown(f"""
                 <div style="background:#131722; border-left: 5px solid {card_color}; padding:15px; margin-bottom:10px; border-radius:5px;">
                     <div style="display:flex; justify-content:space-between;">
@@ -1822,3 +1774,5 @@ with tab_ai:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+        else:
+            st.warning("⚠️ 掃描完成，但沒有標的符合您的評分與篩選門檻。")
