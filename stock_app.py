@@ -309,7 +309,7 @@ def fetch_stock_analysis_with_debug(stock_id, df_info):
                 try:
                     ticker_obj = yf.Ticker(ticker)
                     shares = ticker_obj.fast_info.get('shares_outstanding', 0)
-                    capital_billions = (shares * 10) / 100,000,000  # 換算成「億」
+                    capital_billions = (shares * 10) / 100000000  # 換算成「億」
                 except:
                     capital_billions = 0.0
 
