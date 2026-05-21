@@ -1677,7 +1677,22 @@ with tab_ai:
     scan_limit = st.slider("掃描標的數量", 10, 2000, 500)
     
     if st.button("🚀 啟動高效能掃描"):
-        df_info = dl.taiwan_stock_info()
+        # --- ⚡️ 修正防禦點 1：防止 FinMind API 抽風導致整支 App 癱瘓 ---
+        try:
+            if "FINMIND_TOKEN" in st.secrets:
+                dl.token = st.secrets["FINMIND_TOKEN"]
+            df_info = dl.taiwan_stock_info()
+            if df_info is None or df_info.empty:
+                raise ValueError("FinMind 回傳空表")
+        except Exception as api_err:
+            st.warning("⚠️ FinMind API 連線異常，啟用本地常用股票對照表備援進行掃描。")
+            fallback_data = {
+                'stock_id': ['2330', '2317', '2454', '2356', '2382', '2603', '3037', '0050'],
+                'stock_name': ['台積電', '鴻海', '聯發科', '英業達', '廣達', '長榮', '欣興', '元大台灣50'],
+                'type': ['stock', 'stock', 'stock', 'stock', 'stock', 'stock', 'stock', 'stock']
+            }
+            df_info = pd.DataFrame(fallback_data)
+        
         df_info['stock_id'] = df_info['stock_id'].astype(str)
         
         # 1. 準備清單並徹底清洗格式
@@ -1716,7 +1731,6 @@ with tab_ai:
             for i, future in enumerate(concurrent.futures.as_completed(future_to_stock)):
                 try:
                     res = future.result()
-                    # 修正防禦點：只有後端真正過濾成功、有回傳資料字典時才放行
                     if res is not None:
                         stats["成功抓取"] += 1
                         if sample_data is None: 
@@ -1728,7 +1742,6 @@ with tab_ai:
                         else:
                             stats["分數未達標"] += 1
                     else:
-                        # 被後端過濾淘汰（不符股本或成交量），或是 API 斷線空值
                         stats["API回傳空值"] += 1
                 except Exception as e:
                     stats["系統噴錯"] += 1
@@ -1738,7 +1751,6 @@ with tab_ai:
                 progress_bar.progress(pct)
                 
                 if i % 10 == 0:
-                    # 調整狀態列文字：顯示目前實際通過篩選（入選）的檔數
                     status.text(f"已完成: {i+1}/{total_count} | 目前入選: {len(results)} 檔")
 
         # --- 3. 顯示診斷報告 (確認資料有無抓到) ---
@@ -1749,11 +1761,10 @@ with tab_ai:
             c3.metric("系統異常", stats["系統噴錯"])
             c4.metric("低分過濾", stats["分數未達標"])
             
-            # 💡 新增：核心原因診斷看板
             st.markdown("---")
             st.markdown("### 🛠️ 工程師 Debug 診斷面板")
             
-            # 情境 A：完全是 API 問題（連一檔個股的影子都沒抓到）
+            # 情境 A：完全是 API 問題
             if stats["成功抓取"] == 0 and sample_data is None:
                 st.error("🚨 【診斷結果：API 連線/限流問題】")
                 st.write("👉 **原因：** 程式完全沒有成功觸發任何一檔股票的回傳。")
@@ -1763,8 +1774,8 @@ with tab_ai:
             elif sample_data is not None and len(results) == 0:
                 st.warning("🎯 【診斷結果：策略過濾太嚴格，無股票達標】")
                 st.write("👉 **原因：** API 運作完全正常！我有成功抓到資料，以下是其中一檔的真實數據：")
-                st.json(sample_data) # 把這檔的價量印出來給您看
-                st.write("👉 **對策：** 代表目前市場上沒有股票『同時滿足』股本 > 2億且成交量 > 1000張。這是正常的選股結果，不是系統壞掉喔！")
+                st.json(sample_data) 
+                st.write("👉 **對策：** 代表目前市場上沒有股票『同時滿足』您的自訂價格飆升、股本與日成交量標準。這是正常的選股結果。")
             
             # 情境 C：正常有抓到資料
             else:
@@ -1779,7 +1790,16 @@ with tab_ai:
             for _, row in df_res.head(20).iterrows():
                 card_color = "#00E676" if row['分數'] >= 60 else "#FFD54F"
                 
-                # 修正點：將 st.write 改為純 HTML 變數嵌入，避免語法混用
+                # --- ⚡️ 修正防禦點 2：安全讀取字典欄位，防止 KeyError 癱瘓 UI ---
+                # 使用 .get() 語法提供安全預設值，完美對齊後端回傳格式
+                display_capital = row.get('股本(億)', '已通過篩選')
+                display_volume = row.get('今日成交量(張)', '符合千張標準')
+                display_close_1w = row.get('1周前收盤', '分析成功')
+                display_reason = row.get('評分原因', '未提供')
+                display_suggest = row.get('投資建議', '無提供建議')
+                display_price = row.get('現價', '--')
+                display_volume_ratio = row.get('量比', '--')
+
                 st.markdown(f"""
                 <div style="background:#131722; border-left: 5px solid {card_color}; padding:15px; margin-bottom:10px; border-radius:5px;">
                     <div style="display:flex; justify-content:space-between;">
@@ -1787,7 +1807,10 @@ with tab_ai:
                         <span style="color:{card_color}; font-size:18px;"><b>AI 評分: {row['分數']}</b></span>
                     </div>
                     <div style="color:#9BA3AF; font-size:14px; margin-top:5px;">
-                        股本: {row['股本(億)']}億 ｜ 成交量: {row['今日成交量(張)']}張 ｜ 1周前收盤: {row['1周前收盤']}元
+                        現價: {display_price} 元 ｜ 量比: {display_volume_ratio} ｜ 狀態: {display_suggest}
+                    </div>
+                    <div style="color:#718096; font-size:12px; margin-top:3px; font-style: italic;">
+                        📊 篩選指標 ➔ 股本: {display_capital} ｜ 條件判定: {display_reason}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
