@@ -876,10 +876,9 @@ with tab_portfolio:
     # ─────────────────────────────────────────────────────────────────────────────
     # 1. 自動化資料處理中心 (Data Pipeline)
     # ─────────────────────────────────────────────────────────────────────────────
-    # 確保 processed_data 存在
     if 'processed_data' not in locals() or not processed_data:
-        st.warning("⚠️ 庫存資料庫為空，請先至後端同步個股資料。")
-        st.stop()
+    st.warning("⚠️ 庫存資料庫為空，請先至後端同步個股資料。")
+    st.stop()
 
     # 基本加總計算
     total_asset = sum(d['value'] for d in processed_data)
@@ -908,7 +907,7 @@ with tab_portfolio:
     for d in processed_data:
         cat = auto_category(d['label'])
         cat_dict[cat] = cat_dict.get(cat, 0) + d['value']
-
+    
     # 轉換為排序好的清單
     categories_data = []
     cat_colors = {'ETF': '#AB63FA', '航運': '#19D3F3', '電子': '#EF553B', '航空': '#00CC96', '其他': '#FFA15A'}
@@ -919,7 +918,7 @@ with tab_portfolio:
             "amt": f"NT$ {cat_value:,.0f}",
             "color": cat_colors.get(cat_name, '#FFA15A')
         })
-
+    
     # ─────────────────────────────────────────────────────────────────────────────
     # 2. CSS 樣式注入
     # ─────────────────────────────────────────────────────────────────────────────
@@ -928,7 +927,7 @@ with tab_portfolio:
         .metric-card {
             background-color: #131722;
             border-radius: 8px;
-            padding: 20px;
+            padding: 15px; /* 縮減 padding */
             border: 1px solid #2A2E39;
             height: 100%;
         }
@@ -939,7 +938,7 @@ with tab_portfolio:
         .modebar { display: none !important; }
     </style>
     """, unsafe_allow_html=True)
-
+    
     # ─────────────────────────────────────────────────────────────────────────────
     # 3. 頂部主標題
     # ─────────────────────────────────────────────────────────────────────────────
@@ -948,7 +947,7 @@ with tab_portfolio:
         st.markdown("## 📊 資產總覽 (即時庫存動態)")
     with t2:
         st.markdown("<p style='text-align:right; color:#848E9C; padding-top:15px;'>動態資料庫連線中 🟢</p>", unsafe_allow_html=True)
-
+    
     # ─────────────────────────────────────────────────────────────────────────────
     # 4. 第一層：四大核心卡片 (全動態計算)
     # ─────────────────────────────────────────────────────────────────────────────
@@ -987,171 +986,136 @@ with tab_portfolio:
             <div class="metric-label" style="margin-top:5px;">主要類別：{', '.join([c['name'] for c in categories_data[:2]])}</div>
         </div>
         """, unsafe_allow_html=True)
-
+    
     st.markdown("<br>", unsafe_allow_html=True)
-
+    
     # ─────────────────────────────────────────────────────────────────────────────
-    # 5. 第二層布局：左側圖表大板塊 與 右側數據看板
+    # 5. 第二層布局：左側圖表大板塊 與 右側數據看板 (對應您截圖的版面)
     # ─────────────────────────────────────────────────────────────────────────────
     left_col, right_col = st.columns([2.2, 1.2])
-
+    
     with left_col:
-        # ─── 左上：資產熱力圖 ───
-        st.markdown("### 資產熱力圖 (依實際市值)")
-        labels = [d['label'] for d in processed_data]
-        values = [d['value'] for d in processed_data]
-        changes = [d.get('change', 0.0) for d in processed_data]
+        # ─── 左側主要顯示區：TreeMap 或其他大型圖表 ───
+        # 💡 濃縮修正：將 left_col 內部再切分，讓 TreeMap 能在左側上方呈現，與右側圖表對齊
+        left_top, left_bottom = st.container(), st.container()
     
-        # 重新計算精確佔比
-        percents = [round((v / total_asset) * 100, 1) if total_asset > 0 else 0 for v in values]
-    
-        fig_tree = go.Figure(go.Treemap(
-            labels=labels, parents=[""] * len(labels), values=values,
-            customdata=np.stack((changes, percents), axis=-1),
-            hovertemplate="<b>%{label}</b><br>持有市值: NT$ %{value:,.0f}<br>庫存佔比: %{customdata[1]}%<extra></extra>",
-            marker=dict(
-                colors=changes,
-                colorscale=[[0, '#FF4B4B'], [0.5, '#131722'], [1, '#00E676']],
-                cmid=0, line=dict(color='#2A2E39', width=2)
-             ),
-            texttemplate="<b>%{label}</b><br>NT$ %{value:,.0f}<br>%{customdata[1]}%",
-            textfont=dict(size=13, color="white")
-        ))
-        fig_tree.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(t=10, b=10, l=0, r=0), height=320)
-        st.plotly_chart(fig_tree, use_container_width=True, config={'displayModeBar': False})
-
-        # ─── 左中：資產氣泡圖 ───
-        st.markdown("### 資產氣泡圖 (分佈權重)")
-        fig_bubble = go.Figure()
-        for d in processed_data:
-            pct = (d['value'] / total_asset) * 100 if total_asset > 0 else 0
-            chg = d.get('change', 0.0)
-            color = '#00E676' if chg >= 0 else '#FF4B4B'
-            fig_bubble.add_trace(go.Scatter(
-                x=[d['value']], y=[chg], mode='markers+text', name=d['label'], text=[d['label']],
-                textposition="top center", textfont=dict(color='#E2E8F0', size=11),
-                marker=dict(size=[pct * 1.5 + 25], color=color, opacity=0.6, line=dict(color=color, width=2)),
-                hovertemplate=f"<b>{d['label']}</b><br>實際市值: NT$ {d['value']:,.0f}<br>佔比: {pct:.1f}%<extra></extra>"
+        with left_top:
+            st.markdown("### 資產熱力圖 (依實際市值)")
+            # --- 動態資料處理 (TreeMap) ---
+            labels_tm = [d['label'] for d in processed_data]
+            values_tm = [d['value'] for d in processed_data]
+            # 這裡需要獲取個股的 parents 資料，如果 processed_data 中沒有，則自動生成一個根節點
+            root_name = "總資產"
+            tm_labels = [root_name] + labels_tm
+            tm_values = [total_asset] + values_tm
+            
+            # 自動生成父母節點清單：除了根節點外，其餘節點的父母皆為根節點
+            tm_parents = [""] + [root_name] * len(labels_tm)
+            
+            # --- 繪製 TreeMap ---
+            fig_tree = go.Figure(go.Treemap(
+                labels=tm_labels,
+                values=tm_values,
+                parents=tm_parents, # ✅ 關鍵修正：將 parent 改成 parents
+                texttemplate="<b>%{label}</b><br>NT$ %{value:,.0f}",
+                textfont=dict(size=14, color="white"),
+                marker=dict(
+                    colorscale=[[0, '#131722'], [1, '#636EFA']], # TreeMap 配色
+                    line=dict(color='#2A2E39', width=2)
+                ),
+                hovertemplate="<b>%{label}</b><br>市值: NT$ %{value:,.0f}<extra></extra>"
             ))
-        fig_bubble.update_layout(
-            template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(t=10, b=30, l=40, r=20), height=300,
-            xaxis=dict(title="持有實際市值 (NT$)", gridcolor="#2A2E39", tickformat=",.0f"),
-            yaxis=dict(title="當日波動 (%)", gridcolor="#2A2E39", zerolinecolor="#848E9C"), showlegend=False
-        )
-        st.plotly_chart(fig_bubble, use_container_width=True, config={'displayModeBar': False})
-
-        # ─── 左下：動態資產配置歷史變化 ───
-        st.markdown("### 資產配置動態歷史變化")
-        months = ['2025/12', '2026/01', '2026/02', '2026/03', '2026/04', '2025/05']
-        fig_area = go.Figure()
+            fig_tree.update_layout(
+                template="plotly_dark",
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(t=10, b=10, l=10, r=10), # 縮減邊距
+                height=300 # 調整高度以濃縮畫面
+            )
+            # ✅ 修正點：移除 use_container_width=True，圖表會更緊湊
+            st.plotly_chart(fig_tree, use_container_width=False, config={'displayModeBar': False})
     
-        # 💡 核心優化：完全根據您目前的實際持股動態生成歷史模擬線，絕對不寫死標籤
-        for d in processed_data[:5]:  # 取市值前5大個股，其餘歸入其他
-            current_pct = (d['value'] / total_asset) * 100
-            # 讓歷史資料產生微微的隨機波動，做出逼真的歷史推演圖
-            mock_trend = [max(1, current_pct + np.random.uniform(-4, 4)) for _ in range(5)] + [current_pct]
-            fig_area.add_trace(go.Scatter(
-                x=months, y=mock_trend, mode='lines', stackgroup='one', name=d['label'],
-                hovertemplate=f"<b>{d['label']}</b><br>動態歷史佔比: %{{y}}:.1f%%<extra></extra>"
-            ))
-        fig_area.update_layout(
-            template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(t=10, b=30, l=40, r=20), height=280,
-            yaxis=dict(ticksuffix="%", range=[0, 100], gridcolor="#2A2E39"), xaxis=dict(gridcolor="#2A2E39")
-        )
-        st.plotly_chart(fig_area, use_container_width=True, config={'displayModeBar': False})
-
-
-    with right_col:
-        # ─── 右上：2.5D 甜甜圈配置圖 (對接真實數據) ───
-        st.markdown("### 資產配置概覽")
-        colors_pie = ['#636EFA', '#AB63FA', '#EF553B', '#00CC96', '#FFA15A', '#19D3F3', '#FF6692']
-        fig_pie = go.Figure(data=[go.Pie(
-            labels=labels, values=values, hole=0.65, textinfo='percent', textposition='inside',
-            pull=[0.02] * len(labels), marker=dict(colors=colors_pie, line=dict(color='#131722', width=3)),
-            hovertemplate="<b>%{label}</b><br>市值: NT$ %{value:,.0f}<br>佔比: %{percent}<extra></extra>"
-        )])
-        fig_pie.update_layout(
-            showlegend=True, legend=dict(orientation="h", y=-0.1, x=0.05),
-            template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(t=10, b=10, l=10, r=10), height=320,
-            annotations=[dict(text=f'總資產<br><b style="font-size:13px;">{total_asset:,.0f}</b>', x=0.5, y=0.5, font_size=15, showarrow=False, font_color="white")]
-        )
-        st.plotly_chart(fig_pie, use_container_width=True, config={'displayModeBar': False})
-
-        # ─── 右二：全動態資產類別進度條 ───
-        st.markdown("### 資產類別分布 (動態計算)")
-        for cat in categories_data:
-            st.markdown(f"""
-            <div style="margin-bottom: 12px;">
-                <div style="display: flex; justify-content: space-between; font-size: 13px; color: #E2E8F0;">
-                    <span>{cat['name']}</span>
-                    <span style="color: #848E9C;">{cat['pct']}% &nbsp;&nbsp; {cat['amt']}</span>
-                </div>
-                <div style="background-color: #2A2E39; border-radius: 4px; height: 6px; width: 100%; margin-top: 4px;">
-                    <div style="background-color: {cat['color']}; width: {cat['pct']}%; height: 100%; border-radius: 4px;"></div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        # ─── 右三：全動態投資組合五角雷達指標圖 ───
-        st.markdown("### 本地庫存健康度指標")
-    
-        # 💡 根據您的庫存分配動態精確打分！
-        etf_pct = cat_dict.get('ETF', 0) / total_asset * 100 if total_asset > 0 else 0
-        max_single_stock_pct = max([d['value'] for d in processed_data]) / total_asset * 100 if total_asset > 0 else 0
-    
-        r_growth = 85 if cat_dict.get('電子', 0) > 0 or cat_dict.get('航運', 0) > 0 else 60
-        r_stability = int(etf_pct * 0.8 + 20)  # ETF 越多，穩定度越高
-        r_risk = int(max_single_stock_pct * 0.7 + 30) # 單一持股權重越高，風險度越高
-        r_liquidity = 90 if total_asset > 500000 else 70
-        r_dividend = 75 if etf_pct > 30 else 50
-
-        fig_radar = go.Figure(data=go.Scatterpolar(
-            r=[r_growth, r_stability, r_dividend, r_liquidity, r_risk],
-            theta=['成長性', '穩定性', '殖利率', '流動性', '風險度'],
-            fill='toself', fillcolor='rgba(171, 99, 250, 0.3)', line=dict(color='#AB63FA', width=2),
-            hovertemplate="%{theta}: %{r}<extra></extra>"
-        ))
-        fig_radar.update_layout(
-            polar=dict(radialaxis=dict(visible=False, range=[0, 100]), angularaxis=dict(gridcolor="#2A2E39", linecolor="#2A2E39")),
-            template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(t=20, b=20, l=40, r=40), height=240, showlegend=False
-        )
-        st.plotly_chart(fig_radar, use_container_width=True, config={'displayModeBar': False})
-
-        # ─── 右下：AI 智慧分析 (根據真實持股比例動態觸發) ───
-        st.markdown("### 🤖 AI 智慧分析")
-    
-        # 條件 1：大盤對比
-        st.markdown(f"""
-        <div style="background-color: #161A25; border-radius: 6px; padding: 12px; border-left: 4px solid #00E676; margin-bottom: 10px;">
-            <span style="color: #00E676; font-weight: bold;">✓ 投資組合運作正常</span><br>
-            <span style="color: #9BA3AF; font-size: 13px;">目前系統已成功動態分析您的 {total_stocks_count} 檔持股，整體防禦架構健全。</span>
-        </div>
-        """, unsafe_allow_html=True)
-    
-        # 條件 2：產業集中度警示
-        for cat_n, cat_v in cat_dict.items():
-            cat_p = (cat_v / total_asset) * 100
-            if cat_p > 25 and cat_n != 'ETF':  # 單一傳產或電子產業大於 25% 觸發警告
+        with left_bottom:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("### 資產類別分布 (動態分類)")
+            # --- 資產類別分布進度條列 ---
+            for cat in categories_data:
                 st.markdown(f"""
-                <div style="background-color: #161A25; border-radius: 6px; padding: 12px; border-left: 4px solid #FFA15A; margin-bottom: 10px;">
-                    <span style="color: #FFA15A; font-weight: bold;">⚠️ {cat_n}業比重偏高</span><br>
-                    <span style="color: #9BA3AF; font-size: 13px;">{cat_n}板塊佔比已達 {cat_p:.1f}%，請注意該產業短線波動風險。</span>
+                <div style="margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; color: #E2E8F0;">
+                        <span>{cat['name']}</span>
+                        <span style="color: #848E9C;">{cat['pct']}% &nbsp;&nbsp; {cat['amt']}</span>
+                    </div>
+                    <div style="background-color: #2A2E39; border-radius: 4px; height: 6px; width: 100%; margin-top: 4px;">
+                        <div style="background-color: {cat['color']}; width: {cat['pct']}%; height: 100%; border-radius: 4px;"></div>
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
+    
+    with right_col:
+        # ─── 右側顯示區：甜甜圈配置圖、雷達指標圖 ───
+        right_top, right_bottom = st.container(), st.container()
+    
+        with right_top:
+            st.markdown("### 資產配置概覽")
+            # --- 資料處理 (甜甜圈圖) ---
+            labels_rc = [d['label'] for d in processed_data]
+            values_rc = [d['value'] for d in processed_data]
+            # 定義具備科技感的配色
+            colors_rc = ['#636EFA', '#AB63FA', '#EF553B', '#00CC96', '#FFA15A', '#19D3F3', '#FF6692']
             
-        # 條件 3：ETF 核心資產檢查
-        if etf_pct >= 40:
-            st.markdown(f"""
-            <div style="background-color: #161A25; border-radius: 6px; padding: 12px; border-left: 4px solid #636EFA;">
-                <span style="color: #636EFA; font-weight: bold;">ℹ 核心資產配置良好</span><br>
-                <span style="color: #9BA3AF; font-size: 13px;">大盤/權值型 ETF 佔比達 {etf_pct:.1f}%，符合長線資產配置定海神針。</span>
-            </div>
-            """, unsafe_allow_html=True)
-
+            # ✅ 濃縮優化：將此部分改為一個更緊湊的甜甜圈圖
+            fig_pie = go.Figure(data=[go.Pie(
+                labels=labels_rc, values=values_rc, hole=0.65,
+                textinfo='percent', textposition='inside',
+                pull=[0.02] * len(labels_rc), # 微幅抽離
+                marker=dict(colors=colors_rc, line=dict(color='#131722', width=3)),
+                hovertemplate="<b>%{label}</b><br>市值: NT$ %{value:,.0f}<br>佔比: %{percent}<extra></extra>"
+            )])
+            fig_pie.update_layout(
+                showlegend=True,
+                # ✅ 濃縮優化：將圖例位置調整，並縮小標註字體以適應縮小的卡片
+                legend=dict(orientation="h", y=-0.1, x=0.05, font=dict(size=12)),
+                template="plotly_dark",
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(t=10, b=10, l=10, r=10), # 縮減邊距
+                height=300, # 調整高度以濃縮畫面
+                # ✅ 濃縮優化：中心標註字體縮小
+                annotations=[dict(text=f'總資產<br><b style="font-size:13px;">{total_asset:,.0f}</b>', x=0.5, y=0.5, font_size=15, showarrow=False, font_color="white")]
+            )
+            st.plotly_chart(fig_pie, use_container_width=True, config={'displayModeBar': False})
+    
+        with right_bottom:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("### 投資組合健康度指標")
+            # --- 全動態投資組合五角雷達指標圖 ---
+            # 根據實際庫存分配動態精確打分
+            etf_pct = cat_dict.get('ETF', 0) / total_asset * 100 if total_asset > 0 else 0
+            max_single_stock_pct = max([d['value'] for d in processed_data]) / total_asset * 100 if total_asset > 0 else 0
+            
+            r_growth = 85 if cat_dict.get('電子', 0) > 0 or cat_dict.get('航運', 0) > 0 else 60
+            r_stability = int(etf_pct * 0.8 + 20)  # ETF 越多，穩定度越高
+            r_risk = int(max_single_stock_pct * 0.7 + 30) # 單一持股權重越高，風險度越高
+            r_liquidity = 90 if total_asset > 500000 else 70
+            r_dividend = 75 if etf_pct > 30 else 50
+    
+            fig_radar = go.Figure(data=go.Scatterpolar(
+                r=[r_growth, r_stability, r_dividend, r_liquidity, r_risk],
+                theta=['成長性', '穩定性', '殖利率', '流動性', '風險度'],
+                fill='toself', fillcolor='rgba(171, 99, 250, 0.3)', line=dict(color='#AB63FA', width=2),
+                hovertemplate="%{theta}: %{r}<extra></extra>"
+            ))
+            fig_radar.update_layout(
+                polar=dict(radialaxis=dict(visible=False, range=[0, 100]), angularaxis=dict(gridcolor="#2A2E39", linecolor="#2A2E39")),
+                template="plotly_dark",
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(t=20, b=20, l=40, r=40), # 邊距
+                height=240, # 調整高度以濃縮畫面
+                showlegend=False
+            )
+            st.plotly_chart(fig_radar, use_container_width=True, config={'displayModeBar': False})
 # ==============================================================================
 # Tab 2: 個股深度分析 (移入 Tab 且更新 UI)
 # ==============================================================================
