@@ -897,42 +897,59 @@ with tab_portfolio:
         """, unsafe_allow_html=True)
 
     with col_chart:
-        if processed_data:
-            labels = [d['label'] for d in processed_data]
-            values = [d['value'] for d in processed_data]
-            
-            # 定義一組具備質感的現代配色
-            colors = ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692']
+            if processed_data:
+                labels = [d['label'] for d in processed_data]
+                values = [d['value'] for d in processed_data]
+                
+                # 升級：具備螢光與科技感的色票 (微調亮度)
+                colors = ['#4A62FE', '#FF4B4B', '#00D29E', '#B366FF', '#FF9F43', '#00D1ED', '#FF5D8F']
 
-            fig_pie = go.Figure(data=[go.Pie(
-                labels=labels, 
-                values=values, 
-                hole=.5, # 稍微調大中心洞口，增加通透感
-                textinfo='label+percent', 
-                textposition='outside', # 文字改到外面，避免遮擋立體感
-                pull=[0.05] * len(labels), # 關鍵：將每個區塊微幅抽離，創造立體空隙感
-                marker=dict(
-                    colors=colors,
-                    # 加入深色線條增加區塊深度感
-                    line=dict(color='#111111', width=3) 
-                ),
-                hoverinfo="label+value+percent",
-                rotation=90 # 旋轉角度讓圖表看起來更平衡
-            )])
-            
-            fig_pie.update_layout(
-                showlegend=False, 
-                template="plotly_dark",
-                # 移除背景色，讓它與你的卡片融合
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(t=30, b=30, l=30, r=30),
-                height=400,
-                # 加入標註或陰影感
-                annotations=[dict(text='資產<br>配置', x=0.5, y=0.5, font_size=20, showarrow=False)]
-            )
-            
-            st.plotly_chart(fig_pie, use_container_width=True)
+                fig_pie = go.Figure(data=[go.Pie(
+                    labels=labels, 
+                    values=values, 
+                    hole=0.6, # 洞口稍微再加大一點，讓外環變細，會更顯優雅精緻
+                    textinfo='label+percent', 
+                    textposition='outside', 
+                    textfont=dict(color='#E2E8F0', size=14), # 將外面標籤的字體調亮，適應深色背景
+                    pull=[0.03] * len(labels), # 微幅抽離，保持恰到好處的懸浮感
+                    
+                    marker=dict(
+                        colors=colors,
+                        # 關鍵優化 1：加入微透明度，創造玻璃般的高級感
+                        # Plotly pie chart 無法直接在外面設 opacity，我們等下用 update_traces 處理
+                        
+                        # 關鍵優化 2：邊線顏色改成跟您的卡片背景色相近 (假設是 #131722 或 #1E1E24)
+                        # 這樣割線會變成鏤空的效果，立體感大增！
+                        line=dict(color='#131722', width=4) 
+                    ),
+                    
+                    # 關鍵優化 3：自訂更專業的 Hover 資訊框
+                    hovertemplate="<b>%{label}</b><br>市值: NT$ %{value:,.0f}<br>佔比: %{percent}<extra></extra>",
+                    rotation=45 # 調整起始角度
+                )])
+                
+                fig_pie.update_traces(opacity=0.85) # 套用 85% 透明度，讓顏色變得有柔和透視感
+                
+                fig_pie.update_layout(
+                    showlegend=False, 
+                    template="plotly_dark",
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    margin=dict(t=40, b=40, l=40, r=40), # 稍微增加 margin 給外層文字呼吸空間
+                    height=450, # 高度稍微拉大，讓圖形更舒展
+                    
+                    # 中心文字優化：顏色調成低調的灰色，不搶走色環的風采
+                    annotations=[
+                        dict(
+                            text='<b>資產<br>配置</b>', 
+                            x=0.5, y=0.5, 
+                            font=dict(size=22, color='#8B949E'), 
+                            showarrow=False
+                        )
+                    ]
+                )
+                
+                st.plotly_chart(fig_pie, use_container_width=True)
             
     # 顯示下方的智慧點評 (跨欄顯示)
     if 'values' in locals() and values:
