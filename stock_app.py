@@ -830,120 +830,388 @@ def calculate_atr(df, window=14):
 
 
 # ==============================================================================
-# Tab 1: 庫存總覽 (移入 Tab)
+# Tab 1: 庫存總覽（專業財經 Dashboard 升級版）
 # ==============================================================================
 with tab_portfolio:
+
     total_cost, total_value = 0.0, 0.0
     processed_data = []
 
     if active_costs:
+
         with st.spinner("正在同步雲端數據並計算總資產..."):
+
             for t_code, info in active_costs.items():
+
                 try:
-                    # 【效能優化】使用快取取代每次都要重新下載
-                    temp_df = fetch_yf_data_cached(t_code, period="5d", interval="1d")
-                    
+                    temp_df = fetch_yf_data_cached(
+                        t_code,
+                        period="5d",
+                        interval="1d"
+                    )
+
                     if not temp_df.empty:
+
                         if isinstance(temp_df.columns, pd.MultiIndex):
                             temp_df.columns = temp_df.columns.get_level_values(0)
-                        
+
                         valid_close = temp_df['Close'].dropna()
+
                         if not valid_close.empty:
+
                             c_price = float(valid_close.iloc[-1])
-                            
+
                             c = float(info['cost']) if isinstance(info, dict) else float(info)
                             q = float(info['qty']) if isinstance(info, dict) else 0.0
-                            
+
                             current_market_val = c_price * q * 1000
+
                             total_cost += (c * q * 1000)
                             total_value += current_market_val
-                            
+
                             if current_market_val > 0:
+
                                 processed_data.append({
                                     "label": active_list.get(t_code, t_code),
-                                    "value": current_market_val
+                                    "value": current_market_val,
+                                    "ticker": t_code,
+                                    "qty": q,
+                                    "price": c_price
                                 })
-                except Exception as e:
+
+                except:
                     continue
 
-    # 計算損益
+    # ==============================================================================
+    # 📊 計算總體數據
+    # ==============================================================================
     profit = total_value - total_cost
     roi = (profit / total_cost * 100) if total_cost > 0 else 0
-    p_color = "#FF4B4B" if profit > 0 else ("" if profit < 0 else "#FFFFFF")
 
-    st.write("### ☁️ 小鐵的雲端投資組合")
-    col_summary, col_chart = st.columns([3.0, 7.0])
+    p_color = "#FF4B4B" if profit > 0 else "#26A69A"
 
-    with col_summary:
+    # ==============================================================================
+    # 🎨 CSS 強化（TradingView + Bloomberg 風格）
+    # ==============================================================================
+    st.markdown("""
+    <style>
+
+    .dashboard-card{
+        background: linear-gradient(145deg,#131722,#1B2130);
+        border:1px solid rgba(255,255,255,0.06);
+        border-radius:20px;
+        padding:22px;
+        box-shadow:0 0 30px rgba(0,0,0,0.35);
+    }
+
+    .metric-box{
+        background:rgba(255,255,255,0.03);
+        border:1px solid rgba(255,255,255,0.05);
+        border-radius:16px;
+        padding:18px;
+        margin-bottom:15px;
+        transition:0.3s;
+    }
+
+    .metric-box:hover{
+        transform:translateY(-2px);
+        border:1px solid rgba(255,255,255,0.12);
+    }
+
+    .metric-title{
+        color:#9BA3AF;
+        font-size:13px;
+        margin-bottom:8px;
+    }
+
+    .metric-value{
+        color:white;
+        font-size:30px;
+        font-weight:700;
+    }
+
+    .metric-profit{
+        color:#FF4B4B;
+        font-size:36px;
+        font-weight:800;
+    }
+
+    .metric-loss{
+        color:#26A69A;
+        font-size:36px;
+        font-weight:800;
+    }
+
+    .metric-percent{
+        color:#FFD166;
+        font-size:28px;
+        font-weight:700;
+    }
+
+    .section-header{
+        font-size:30px;
+        font-weight:800;
+        color:white;
+        margin-bottom:20px;
+    }
+
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="section-header">
+    ☁️ 小鐵 AI 雲端投資儀表板
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ==============================================================================
+    # 🎯 主版面
+    # ==============================================================================
+    left_col, right_col = st.columns([3.2, 6.8])
+
+    # ==============================================================================
+    # 📌 左側：財務摘要卡片
+    # ==============================================================================
+    with left_col:
+
         st.markdown(f"""
-            <div style="
-                background-color: #1e1e1e; padding: 20px; border-radius: 15px; 
-                border-left: 10px solid {p_color}; height: 350px; 
-                display: flex; flex-direction: column; justify-content: space-around;
-            ">
-                <div>
-                    <p style="color: gray; margin: 0; font-size: 14px;">資產總市值</p>
-                    <h2 style="color: white; margin: 0; font-size: 24px;">NT$ {int(total_value):,}</h2>
-                </div>
-                <div style="border-top: 1px solid #444; border-bottom: 1px solid #444; padding: 15px 0;">
-                    <p style="color: gray; margin: 0; font-size: 14px;">預估總損益</p>
-                    <h1 style="color: {p_color}; margin: 0; font-size: 32px;">{"+" if profit > 0 else ""}{int(profit):,}</h1>
-                </div>
-                <div>
-                    <p style="color: gray; margin: 0; font-size: 14px;">總報酬率</p>
-                    <h2 style="color: {p_color}; margin: 0; font-size: 24px;">{roi:.2f}%</h2>
+        <div class="dashboard-card">
+
+            <div class="metric-box">
+                <div class="metric-title">💰 資產總市值</div>
+                <div class="metric-value">
+                    NT$ {int(total_value):,}
                 </div>
             </div>
+
+            <div class="metric-box">
+                <div class="metric-title">📈 預估總損益</div>
+                <div class="{'metric-profit' if profit > 0 else 'metric-loss'}">
+                    {"+" if profit > 0 else ""}
+                    {int(profit):,}
+                </div>
+            </div>
+
+            <div class="metric-box">
+                <div class="metric-title">🚀 總報酬率</div>
+                <div class="metric-percent">
+                    {roi:.2f}%
+                </div>
+            </div>
+
+        </div>
         """, unsafe_allow_html=True)
 
-    with col_chart:
+        # ==============================================================================
+        # 🧠 AI 分析
+        # ==============================================================================
         if processed_data:
+
+            max_item = max(processed_data, key=lambda x: x['value'])
+
+            max_pct = (max_item['value'] / total_value) * 100
+
+            if max_pct >= 50:
+                st.error(
+                    f"⚠️ 持股過度集中："
+                    f"{max_item['label']} 佔資產 {max_pct:.1f}%"
+                )
+
+            elif max_pct >= 30:
+                st.warning(
+                    f"📌 核心持股："
+                    f"{max_item['label']} 為主要部位 ({max_pct:.1f}%)"
+                )
+
+            else:
+                st.success(
+                    "✅ 資產配置健康，風險分散良好"
+                )
+
+    # ==============================================================================
+    # 📊 右側：資產配置主圖
+    # ==============================================================================
+    with right_col:
+
+        if processed_data:
+
             labels = [d['label'] for d in processed_data]
             values = [d['value'] for d in processed_data]
-            
-            # 定義一組具備質感的現代配色
-            colors = ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692']
 
-            fig_pie = go.Figure(data=[go.Pie(
-                labels=labels, 
-                values=values, 
-                hole=.5, # 稍微調大中心洞口，增加通透感
-                textinfo='label+percent', 
-                textposition='outside', # 文字改到外面，避免遮擋立體感
-                pull=[0.05] * len(labels), # 關鍵：將每個區塊微幅抽離，創造立體空隙感
+            colors = [
+                '#4A62FE',
+                '#FF4B4B',
+                '#00D29E',
+                '#B366FF',
+                '#FF9F43',
+                '#00D1ED',
+                '#FF5D8F',
+                '#7EE787'
+            ]
+
+            fig = go.Figure()
+
+            # ==============================================================================
+            # 🎯 外圈主環
+            # ==============================================================================
+            fig.add_trace(go.Pie(
+
+                labels=labels,
+                values=values,
+
+                hole=0.68,
+
+                textinfo='label+percent',
+
+                textposition='outside',
+
+                pull=[0.03] * len(labels),
+
+                direction='clockwise',
+
+                sort=False,
+
                 marker=dict(
                     colors=colors,
-                    # 加入深色線條增加區塊深度感
-                    line=dict(color='#111111', width=3) 
+
+                    line=dict(
+                        color='#0B1120',
+                        width=7
+                    )
                 ),
-                hoverinfo="label+value+percent",
-                rotation=90 # 旋轉角度讓圖表看起來更平衡
-            )])
-            
-            fig_pie.update_layout(
-                showlegend=False, 
+
+                hovertemplate=
+                "<b>%{label}</b><br>" +
+                "市值: NT$ %{value:,.0f}<br>" +
+                "配置比重: %{percent}<extra></extra>",
+
+            ))
+
+            # ==============================================================================
+            # 🎨 Layout 強化
+            # ==============================================================================
+            fig.update_layout(
+
                 template="plotly_dark",
-                # 移除背景色，讓它與你的卡片融合
+
+                height=620,
+
+                showlegend=False,
+
                 paper_bgcolor='rgba(0,0,0,0)',
+
                 plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(t=30, b=30, l=30, r=30),
-                height=400,
-                # 加入標註或陰影感
-                annotations=[dict(text='資產<br>配置', x=0.5, y=0.5, font_size=20, showarrow=False)]
+
+                margin=dict(
+                    t=30,
+                    b=30,
+                    l=30,
+                    r=30
+                ),
+
+                annotations=[
+
+                    dict(
+                        text=f"""
+                        <span style='font-size:34px;
+                        font-weight:800;color:white'>
+                        NT$
+                        </span>
+                        <br>
+                        <span style='font-size:28px;
+                        color:#4A62FE;
+                        font-weight:700'>
+                        {int(total_value):,}
+                        </span>
+                        <br>
+                        <span style='font-size:15px;
+                        color:#9BA3AF'>
+                        資產配置
+                        </span>
+                        """,
+
+                        x=0.5,
+                        y=0.5,
+
+                        showarrow=False,
+
+                        font=dict(
+                            color="white"
+                        )
+                    )
+                ]
             )
-            
-            st.plotly_chart(fig_pie, use_container_width=True)
-            
-    # 顯示下方的智慧點評 (跨欄顯示)
-    if 'values' in locals() and values:
-        max_idx = values.index(max(values))
-        max_stock = labels[max_idx]
-        max_pct = (values[max_idx] / sum(values)) * 100
-        
-        if max_pct > 50:
-            st.warning(f"⚠️ **小鐵提醒**：您的資金高度集中在 **{max_stock}** ({max_pct:.1f}%)。若該股波動較大，將顯著影響總資產水位。")
-        else:
-            st.info(f"✅ **小鐵點評**：資產配置比例健康。目前以 **{max_stock}** 為核心持股。")
+
+            st.plotly_chart(
+                fig,
+                use_container_width=True
+            )
+
+            # ==============================================================================
+            # 📋 下方持股排行榜（超像專業券商）
+            # ==============================================================================
+            st.markdown("### 📊 持股權重排行")
+
+            rank_df = pd.DataFrame(processed_data)
+
+            rank_df['weight'] = (
+                rank_df['value'] / total_value * 100
+            )
+
+            rank_df = rank_df.sort_values(
+                by='weight',
+                ascending=False
+            )
+
+            for idx, row in rank_df.iterrows():
+
+                st.markdown(f"""
+                <div style="
+                    background:#131722;
+                    border:1px solid rgba(255,255,255,0.05);
+                    border-radius:14px;
+                    padding:14px;
+                    margin-bottom:10px;
+                ">
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                    ">
+
+                        <div>
+
+                            <div style="
+                                color:white;
+                                font-size:16px;
+                                font-weight:700;
+                            ">
+                                {row['label']}
+                            </div>
+
+                            <div style="
+                                color:#9BA3AF;
+                                font-size:13px;
+                                margin-top:4px;
+                            ">
+                                市值 NT$ {int(row['value']):,}
+                            </div>
+
+                        </div>
+
+                        <div style="
+                            color:#4A62FE;
+                            font-size:22px;
+                            font-weight:800;
+                        ">
+                            {row['weight']:.1f}%
+                        </div>
+
+                    </div>
+
+                </div>
+                """, unsafe_allow_html=True)
 
 # ==============================================================================
 # Tab 2: 個股深度分析 (移入 Tab 且更新 UI)
