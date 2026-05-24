@@ -1006,7 +1006,7 @@ with tab_portfolio:
         percents = [round((v / total_asset) * 100, 1) if total_asset > 0 else 0 for v in values]
     
         fig_tree = go.Figure(go.Treemap(
-            labels=labels, parent=[""] * len(labels), values=values,
+            labels=labels, parents=[""] * len(labels), values=values,
             customdata=np.stack((changes, percents), axis=-1),
             hovertemplate="<b>%{label}</b><br>持有市值: NT$ %{value:,.0f}<br>庫存佔比: %{customdata[1]}%<extra></extra>",
             marker=dict(
