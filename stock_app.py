@@ -877,8 +877,8 @@ with tab_portfolio:
     # 1. 自動化資料處理中心 (Data Pipeline)
     # ─────────────────────────────────────────────────────────────────────────────
     if 'processed_data' not in locals() or not processed_data:
-    st.warning("⚠️ 庫存資料庫為空，請先至後端同步個股資料。")
-    st.stop()
+        st.warning("⚠️ 庫存資料庫為空，請先至後端同步個股資料。")
+        st.stop()
 
     # 基本加總計算
     total_asset = sum(d['value'] for d in processed_data)
