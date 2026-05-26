@@ -1172,40 +1172,58 @@ with tab_analysis:
                 fig_chip.update_layout(template="plotly_dark",height=300,hovermode="x unified")
                 st.plotly_chart(fig_chip,use_container_width=True)
 
+           # =============================
+            # 📊🔥 歷史籌碼與股價對照表（終極防禦版）
             # =============================
-            # 📊🔥 歷史籌碼與股價對照表（修正防呆版）
-            # =============================
-            if not df_chip.empty and not data.empty:
+            if df_chip is not None and not df_chip.empty and data is not None and not data.empty:
                 st.markdown('<div class="section-title">📊 歷史籌碼與股價對照表 (近 10 日)</div>', unsafe_allow_html=True)
                 
                 try:
-                    # 1. 處理籌碼資料
-                    df_chip_daily = df_chip.groupby(['date', 'name']).agg({'buy': 'sum', 'sell': 'sum'}).reset_index()
-                    df_chip_daily['net_shares'] = (df_chip_daily['buy'] - df_chip_daily['sell']) / 1000  # 換算成張數
+                    # --- 1. 核心資料深層清洗（徹底剝離所有原始 MultiIndex 與複雜型態） ---
+                    raw_chip = df_chip.copy()
+                    if isinstance(raw_chip.columns, pd.MultiIndex):
+                        raw_chip.columns = raw_chip.columns.get_level_values(0)
+                        
+                    raw_data = data.copy()
+                    if isinstance(raw_data.columns, pd.MultiIndex):
+                        raw_data.columns = raw_data.columns.get_level_values(0)
+
+                    # --- 2. 建立標準化法人籌碼表 ---
+                    raw_chip['date'] = pd.to_datetime(raw_chip['date'], errors='coerce')
+                    df_chip_daily = raw_chip.groupby(['date', 'name']).agg({'buy': 'sum', 'sell': 'sum'}).reset_index()
+                    df_chip_daily['net_shares'] = (df_chip_daily['buy'] - df_chip_daily['sell']) / 1000
                     
                     df_chip_pivot = df_chip_daily.pivot(index='date', columns='name', values='net_shares').fillna(0).reset_index()
-                    # 確保日期欄位名稱為 'date' 且型態為字串 (YYYY-MM-DD)
-                    df_chip_pivot['date'] = pd.to_datetime(df_chip_pivot['date']).dt.strftime('%Y-%m-%d')
                     
-                    # 2. 處理股價與漲跌幅資料
-                    df_price = data[['Close']].copy()
-                    df_price['漲跌幅(%)'] = df_price['Close'].pct_change() * 100
-                    df_price = df_price.reset_index()
+                    # 安全捕捉法人欄位（防止大小寫、底線不一致變體）
+                    f_col = next((str(c) for c in df_chip_pivot.columns if 'Foreign' in str(c) or '外資' in str(c)), None)
+                    d_col = next((str(c) for c in df_chip_pivot.columns if 'Investment' in str(c) or '投信' in str(c)), None)
                     
-                    # 自動偵測 yfinance 的日期欄位名稱（有可能是 'Date' 或 'index'）
-                    date_col_name = df_price.columns[0]
-                    df_price = df_price.rename(columns={date_col_name: 'date'})
-                    df_price['date'] = pd.to_datetime(df_price['date']).dt.strftime('%Y-%m-%d')
+                    # 強制建立單一索引全新 DataFrame
+                    df_clean_chip = pd.DataFrame()
+                    df_clean_chip['date'] = pd.to_datetime(df_chip_pivot['date']).dt.strftime('%Y-%m-%d')
+                    df_clean_chip['外資_張'] = pd.to_numeric(df_chip_pivot[f_col].values, errors='coerce') if f_col else 0.0
+                    df_clean_chip['投信_張'] = pd.to_numeric(df_chip_pivot[d_col].values, errors='coerce') if d_col else 0.0
+                    df_clean_chip = df_clean_chip.fillna(0.0)
+
+                    # --- 3. 建立標準化股價資料表 ---
+                    df_clean_price = pd.DataFrame()
+                    price_idx = raw_data.index.get_level_values(0) if isinstance(raw_data.index, pd.MultiIndex) else raw_data.index
+                    df_clean_price['date'] = pd.to_datetime(price_idx).strftime('%Y-%m-%d')
+                    df_clean_price['Close'] = pd.to_numeric(raw_data['Close'].values, errors='coerce') if 'Close' in raw_data.columns else 0.0
+                    df_clean_price = df_clean_price.fillna(0.0)
                     
-                    # 3. 用 merge 合併（用字串日期對齊，絕對不會錯位）
-                    df_compare = pd.merge(df_price, df_chip_pivot, on='date', how='inner')
+                    # 確保時間軸由舊到新計算漲跌幅，算完再倒序
+                    df_clean_price = df_clean_price.sort_values(by='date', ascending=True)
+                    df_clean_price['漲跌幅(%)'] = df_clean_price['Close'].pct_change() * 100
+                    df_clean_price = df_clean_price.fillna(0.0)
+
+                    # --- 4. 進行純字串級別的 Inner Merge 合併 ---
+                    df_compare = pd.merge(df_clean_price, df_clean_chip, on='date', how='inner')
+                    df_compare = df_compare.drop_duplicates(subset=['date'])
                     df_compare = df_compare.sort_values(by='date', ascending=False).head(10)
-                    
-                    # 4. 動態偵測外資、投信的欄位名稱
-                    f_col = next((c for c in df_compare.columns if 'Foreign' in c or '外資' in c), None)
-                    d_col = next((c for c in df_compare.columns if 'Investment' in c or '投信' in c), None)
-                    
-                    # 建立 HTML 表格
+
+                    # --- 5. 安全渲染 HTML 表格 ---
                     table_html = """
                     <div style="overflow-x:auto; margin-top:10px; border-radius: 8px; border: 1px solid #2A2E39;">
                     <table style="width:100%; border-collapse: collapse; background-color: #131722; color: #d1d4dc; font-size: 14px; text-align: center;">
@@ -1226,25 +1244,24 @@ with tab_analysis:
                         for _, row in df_compare.iterrows():
                             date_str = str(row['date'])
                             close_p = float(row['Close'])
-                            change = float(row['漲跌幅(%)']) if pd.notna(row['漲跌幅(%)']) else 0.0
+                            change = float(row['漲跌幅(%)'])
+                            f_net = float(row['外資_張'])
+                            td_net = float(row['投信_張'])
                             
-                            f_net = float(row[f_col]) if f_col and pd.notna(row[f_col]) else 0.0
-                            d_net = float(row[d_col]) if d_col and pd.notna(row[d_col]) else 0.0
-                            
-                            # 股價漲跌視覺顏色
+                            # 漲跌顏色判斷
                             price_cls = "color: #FF4B4B;" if change > 0 else "color: #26A69A;" if change < 0 else "color: #9BA3AF;"
                             price_sign = "+" if change > 0 else ""
                             
-                            # 法人買賣超顏色
+                            # 法人買賣顏色
                             f_color = "#FF4B4B" if f_net > 0 else "#26A69A" if f_net < 0 else "#9BA3AF"
-                            d_color = "#FF4B4B" if d_net > 0 else "#26A69A" if d_net < 0 else "#9BA3AF"
+                            d_color = "#FF4B4B" if td_net > 0 else "#26A69A" if td_net < 0 else "#9BA3AF"
                             
-                            # 自動判斷數據背離
-                            if change < 0 and d_net > 500:
+                            # 數據背離核心邏輯
+                            if change < 0 and td_net > 500:
                                 status_tag = '<span style="background: rgba(255, 75, 75, 0.15); color: #FF4B4B; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">🔥 投信洗盤承接</span>'
                             elif change > 0 and f_net < -1000:
                                 status_tag = '<span style="background: rgba(38, 166, 154, 0.15); color: #26A69A; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">⚠️ 外資拉高出貨</span>'
-                            elif f_net > 0 and d_net > 0 and change > 0:
+                            elif f_net > 0 and td_net > 0 and change > 0:
                                 status_tag = '<span style="background: rgba(255, 214, 0, 0.15); color: #FFD600; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">🚀 法人合擊</span>'
                             else:
                                 status_tag = '<span style="color: #9BA3AF; font-size: 12px;">正常輪動</span>'
@@ -1255,7 +1272,7 @@ with tab_analysis:
                                     <td style="padding: 10px; font-weight: bold;">{close_p:.2f}</td>
                                     <td style="padding: 10px; font-weight: bold; {price_cls}">{price_sign}{change:.2f}%</td>
                                     <td style="padding: 10px; color: {f_color}; font-weight: 500;">{int(f_net):+,}</td>
-                                    <td style="padding: 10px; color: {d_color}; font-weight: bold;">{int(d_net):+,}</td>
+                                    <td style="padding: 10px; color: {d_color}; font-weight: bold;">{int(td_net):+,}</td>
                                     <td style="padding: 10px;">{status_tag}</td>
                                 </tr>
                             """
@@ -1275,7 +1292,7 @@ with tab_analysis:
                     st.caption("💡 註：張數正值為買超（紅），負值為賣超（綠）。狀態欄會自動偵測「股價與投信/外資背離」的洗盤或出貨訊號。")
                     
                 except Exception as table_err:
-                    st.error(f"❌ 對照表渲染失敗，錯誤原因: {table_err}")
+                    st.error(f"❌ 對照表功能異常，已跳過渲染。原因: {table_err}")
             # =============================
             # 📊🔥 合併主圖（TV風格）
             # =============================
