@@ -1173,6 +1173,97 @@ with tab_analysis:
                 st.plotly_chart(fig_chip,use_container_width=True)
 
             # =============================
+            # 📊🔥 歷史籌碼與股價對照表（NEW）
+            # =============================
+            if not df_chip.empty and not data.empty:
+                st.markdown('<div class="section-title">📊 歷史籌碼與股價對照表 (近 10 日)</div>', unsafe_allow_html=True)
+                
+                try:
+                    # 1. 整理籌碼資料：按日期與法人名稱加總
+                    df_chip_daily = df_chip.groupby(['date', 'name']).agg({'buy': 'sum', 'sell': 'sum'}).reset_index()
+                    df_chip_daily['net_shares'] = (df_chip_daily['buy'] - df_chip_daily['sell']) / 1000  # 換算成張數
+                    
+                    # 轉置成以日期為 Index，法人為欄位
+                    df_chip_pivot = df_chip_daily.pivot(index='date', columns='name', values='net_shares').fillna(0)
+                    
+                    # 欄位名稱對齊轉換
+                    f_col = next((c for c in df_chip_pivot.columns if 'Foreign' in c), None)
+                    d_col = next((c for c in df_chip_pivot.columns if 'Investment_Trust' in c), None)
+                    
+                    # 2. 整理股價與漲跌幅資料 (從 yfinance 的 data 提取)
+                    df_price = data[['Close', 'Open']].copy()
+                    df_price['漲跌幅(%)'] = df_price['Close'].pct_change() * 100
+                    df_price.index = pd.to_datetime(df_price.index).date  # 統一轉成 date 格式以利對齊
+                    
+                    # 3. 合併籌碼與股價
+                    df_chip_pivot.index = pd.to_datetime(df_chip_pivot.index).date
+                    df_compare = df_price.join(df_chip_pivot, how='inner').sort_index(ascending=False).head(10)
+                    
+                    # 4. 建立 HTML 表格
+                    table_html = """
+                    <div style="overflow-x:auto; margin-top:10px; border-radius: 8px; border: 1px solid #2A2E39;">
+                    <table style="width:100%; border-collapse: collapse; background-color: #131722; color: #d1d4dc; font-size: 14px; text-align: center;">
+                        <thead>
+                            <tr style="background-color: #1c2030; border-bottom: 2px solid #2A2E39; height: 40px;">
+                                <th style="padding: 10px;">交易日期</th>
+                                <th style="padding: 10px;">收盤價</th>
+                                <th style="padding: 10px;">當日漲跌</th>
+                                <th style="padding: 10px;">外資 (張)</th>
+                                <th style="padding: 10px;">投信 (張)</th>
+                                <th style="padding: 10px;">籌碼狀態</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                    """
+                    
+                    for date_idx, row in df_compare.iterrows():
+                        f_net = row[f_col] if f_col in row else 0
+                        d_net = row[d_col] if d_col in row else 0
+                        change = row['漲跌幅(%)']
+                        close_p = row['Close']
+                        
+                        # 股價漲跌視覺顏色
+                        price_cls = "color: #FF4B4B;" if change > 0 else "color: #26A69A;" if change < 0 else "color: #9BA3AF;"
+                        price_sign = "+" if change > 0 else ""
+                        
+                        # 法人買賣超顏色
+                        f_color = "#FF4B4B" if f_net > 0 else "#26A69A" if f_net < 0 else "#9BA3AF"
+                        d_color = "#FF4B4B" if d_net > 0 else "#26A69A" if d_net < 0 else "#9BA3AF"
+                        
+                        # 🌟 自動判斷數據背離（主力洗盤還是在倒貨）
+                        if change < 0 and d_net > 500:
+                            status_tag = '<span style="background: rgba(255, 75, 75, 0.15); color: #FF4B4B; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">🔥 投信洗盤承接</span>'
+                        elif change > 0 and f_net < -1000:
+                            status_tag = '<span style="background: rgba(38, 166, 154, 0.15); color: #26A69A; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">⚠️ 外資拉高出貨</span>'
+                        elif f_net > 0 and d_net > 0 and change > 0:
+                            status_tag = '<span style="background: rgba(255, 214, 0, 0.15); color: #FFD600; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">🚀 法人合擊</span>'
+                        else:
+                            status_tag = '<span style="color: #9BA3AF; font-size: 12px;">正常輪動</span>'
+                            
+                        table_html += f"""
+                            <tr style="border-bottom: 1px solid #2A2E39; height: 45px;" onmouseover="this.style.backgroundColor='#1e222d'" onmouseout="this.style.backgroundColor='#131722'">
+                                <td style="padding: 10px; font-weight: 500;">{date_idx}</td>
+                                <td style="padding: 10px; font-weight: bold;">{close_p:.2f}</td>
+                                <td style="padding: 10px; font-weight: bold; {price_cls}">{price_sign}{change:.2f}%</td>
+                                <td style="padding: 10px; color: {f_color}; font-weight: 500;">{int(f_net):+,}</td>
+                                <td style="padding: 10px; color: {d_color}; font-weight: bold;">{int(d_net):+,}</td>
+                                <td style="padding: 10px;">{status_tag}</td>
+                            </tr>
+                        """
+                        
+                    table_html += """
+                        </tbody>
+                    </table>
+                    </div>
+                    """
+                    
+                    st.markdown(table_html, unsafe_allow_html=True)
+                    st.caption("💡 註：張數正值為買超（紅），負值為賣超（綠）。狀態欄會自動偵測「股價與投信/外資背離」的洗盤或出貨訊號。")
+                    
+                except Exception as table_err:
+                    st.error(f"❌ 無法生成對照表: {table_err}")
+
+            # =============================
             # 📊🔥 合併主圖（TV風格）
             # =============================
             st.markdown('<div class="section-title">📊 技術分析</div>', unsafe_allow_html=True)
