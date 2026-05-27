@@ -1218,12 +1218,11 @@ with tab_analysis:
 
             st.plotly_chart(fig,use_container_width=True)
 
-            # =============================
-            # 🤖 AI 專業評分系統（升級版）
-            # =============================
+            # =================================================================
+            # 🤖 AI 專業法人量化評分系統（頂級付費 App 升級版）
+            # =================================================================
             st.write("---")
-            st.markdown("## 🤖 投資診斷系統")
-
+            
             curr_rsi = data['RSI'].iloc[-1]
             curr_macd = data['MACD'].iloc[-1]
             curr_sig = data['Signal'].iloc[-1]
@@ -1233,50 +1232,70 @@ with tab_analysis:
             is_above_ma20 = price > float(curr['MA20'])
             macd_golden_cross = curr_macd > curr_sig
 
-            # =============================
+            # ─────────────────────────────────────────────────────────
             # 🎯 1. 三大核心因子評分
-            # =============================
+            # ─────────────────────────────────────────────────────────
             trend_score, psy_score, momo_score = 0, 0, 0
 
             # 趨勢
             if is_above_ma20 and macd_golden_cross:
                 trend_label = "多頭趨勢"
+                trend_badge = "BULLISH"
+                trend_color = "#00E676"
                 trend_score = 2
             elif is_above_ma20:
                 trend_label = "高檔整理"
+                trend_badge = "HEAVY"
+                trend_color = "#FFA15A"
                 trend_score = 1
             elif macd_golden_cross:
                 trend_label = "反彈初期"
+                trend_badge = "REBOUND"
+                trend_color = "#636EFA"
                 trend_score = 0
             else:
                 trend_label = "空頭趨勢"
+                trend_badge = "BEARISH"
+                trend_color = "#FF5252"
                 trend_score = -2
 
             # 心理
             if curr_rsi >= 75:
-                psy_label = "過熱"
+                psy_label = "心理過熱"
+                psy_badge = "OVERHEAT"
+                psy_color = "#FF5252"
                 psy_score = -1
             elif curr_rsi <= 25:
-                psy_label = "超跌"
+                psy_label = "恐慌超跌"
+                psy_badge = "OVERSOLD"
+                psy_color = "#00E676"
                 psy_score = 1
             else:
-                psy_label = "中性"
+                psy_label = "心理中性"
+                psy_badge = "NEUTRAL"
+                psy_color = "#9BA3AF"
                 psy_score = 0
 
             # 動能
             if curr_macd > curr_sig and curr_hist > prev_hist:
                 momo_label = "動能增強"
+                momo_badge = "STRONG"
+                momo_color = "#00E676"
                 momo_score = 1
             elif curr_macd < curr_sig and curr_hist < prev_hist:
                 momo_label = "動能轉弱"
+                momo_badge = "WEAK"
+                momo_color = "#FF5252"
                 momo_score = -1
             else:
                 momo_label = "動能整理"
+                momo_badge = "SIDEWAYS"
+                momo_color = "#FFA15A"
                 momo_score = 0
 
-            # =============================
-            # 🎯 2. 籌碼 + ATR
-            # =============================
+            # ─────────────────────────────────────────────────────────
+            # 🎯 2. 籌碼 + ATR 計算
+            # ─────────────────────────────────────────────────────────
             score = trend_score + psy_score + momo_score
             
             try:
@@ -1286,101 +1305,172 @@ with tab_analysis:
 
             if f_net > 0 and d_net > 0:
                 chip_label = "法人同步買入"
+                chip_badge = "INSTITUTION"
+                chip_color = "#636EFA"
                 score += 2
             elif total_net > 0:
                 chip_label = "法人偏多"
+                chip_badge = "NET BUY"
+                chip_color = "#19D3F3"
                 score += 1
             elif total_net < 0:
                 chip_label = "法人賣出"
+                chip_badge = "OUTFLOW"
+                chip_color = "#FF5252"
                 score -= 1
             else:
-                chip_label = "中性"
+                chip_label = "籌碼中性"
+                chip_badge = "NEUTRAL"
+                chip_color = "#9BA3AF"
 
             atr_stop = data['ATR_Trailing'].iloc[-1]
 
             if price < atr_stop:
                 atr_label = "跌破支撐"
+                atr_badge = "BREACH"
+                atr_color = "#FF5252"
                 score -= 1
             else:
                 atr_label = "支撐有效"
+                atr_badge = "STABLE"
+                atr_color = "#19D3F3"
 
-            # =============================
-            # 🎯 3. 最終評級
-            # =============================
+            # ─────────────────────────────────────────────────────────
+            # 🎯 3. 最終評級與動態策略矩陣映射
+            # ─────────────────────────────────────────────────────────
+            # 將原本 -4 到 +5 的原始分數，等比例動態映射到法人的 100 分制系統
+            quant_score = int(((score + 4) / 9) * 40 + 55)
+            quant_score = max(30, min(99, quant_score))  # 限制範圍在 30 ~ 99 之間
+
             if score >= 4:
                 rec = "強勢多頭"
-                color = "#26A69A"
+                color = "#00E676"
+                action_title = "🚀 建議執行：順勢加碼 / 強勢軋空波段持有"
+                action_desc = "當前多個關鍵因子產生強烈共振，內資大戶與法人控盤意願極高，市場呈現典型軋空或多頭推進結構。操作切勿盲目猜頂，建議讓利潤持續奔跑，回檔不破移動防守線皆為加碼良機。"
             elif score >= 2:
-                rec = "偏多"
-                color = "#00C853"
+                rec = "趨勢偏多"
+                color = "#4CAF50"
+                action_title = "📈 建議執行：逢低布局 / 留意支撐建立多單"
+                action_desc = "技術面與籌碼面基本維持多頭底氣，雖伴隨部分指標高檔整理，但下檔買盤依然強勁。策略上應採取『買跌不買漲』，於技術支撐區或五日線附近分批佈局，勝率較高。"
             elif score >= 0:
-                rec = "盤整"
-                color = "#FFD600"
+                rec = "區間盤整"
+                color = "#FFC107"
+                action_title = "⏳ 建議執行：觀望防守 / 縮小部位區間操作"
+                action_desc = "多空力道陷入膠著，指標方向未明，股價多處於箱型震盪或均線糾結階段。此時過度追高極易雙向雙巴，建議縮小操作部位，靜待量能放大、價格正式突破區間邊界後再行跟進。"
             else:
-                rec = "偏空"
-                color = "#EF5350"
+                rec = "趨勢偏空"
+                color = "#FF5252"
+                action_title = "⚠️ 建議執行：減碼避險 / 嚴格執行停損防禦"
+                action_desc = "多頭結構已遭到破壞，空方動能佔據絕對優勢，或法人主力資金出現顯著撤離訊號。此時切勿盲目進場攤平。持有庫存者應極度重視下方防守價，一旦失守需果斷執行減碼控管風險。"
 
-            # =============================
-            # 🎨 UI（TradingView卡片）
-            # =============================
+            # ─────────────────────────────────────────────────────────
+            # 🎨 UI 渲染：注入高級暗色調 Bloomberg CSS 樣式
+            # ─────────────────────────────────────────────────────────
             st.markdown(f"""
-            <div style="
-            background:#131722;
-            border:1px solid #2A2E39;
-            border-radius:12px;
-            padding:20px;
-            ">
-
-            <h2 style="color:{color}; text-align:center; margin:0;">
-            {rec}
-            </h2>
-
-            <p style="text-align:center; color:#9BA3AF;">
-            綜合評分：{score}
-            </p>
-
-            <hr style="border:0.5px solid #2A2E39;">
-
-            <div style="display:flex; justify-content:space-between;">
-
-            <div>
-            <p style="color:#9BA3AF;">趨勢</p>
-            <p style="color:white;">{trend_label}</p>
-            </div>
-
-            <div>
-            <p style="color:#9BA3AF;">動能</p>
-            <p style="color:white;">{momo_label}</p>
-            </div>
-
-            <div>
-            <p style="color:#9BA3AF;">心理</p>
-            <p style="color:white;">{psy_label}</p>
-            </div>
-
-            <div>
-            <p style="color:#9BA3AF;">籌碼</p>
-            <p style="color:white;">{chip_label}</p>
-            </div>
-
-            <div>
-            <p style="color:#9BA3AF;">ATR</p>
-            <p style="color:white;">{atr_label}</p>
-            </div>
-
-            </div>
-            </div>
+            <style>
+                .pro-panel {{ background: linear-gradient(145deg, #161A25, #0E1118); border: 1px solid #232838; border-radius: 12px; padding: 24px; margin-bottom: 25px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }}
+                .pro-header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #232838; padding-bottom: 16px; margin-bottom: 20px; }}
+                .pro-title {{ color: #FFFFFF; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }}
+                .pro-score-box {{ background: {color}15; border: 1px solid {color}; border-radius: 6px; padding: 6px 14px; text-align: center; }}
+                
+                /* 五大因子水平網格 */
+                .matrix-grid {{ display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 24px; }}
+                .matrix-card {{ background: #1A1F2C; border: 1px solid #2A3142; border-radius: 8px; padding: 12px; position: relative; }}
+                .matrix-name {{ color: #848E9C; font-size: 11px; font-weight: 500; margin-bottom: 4px; }}
+                .matrix-state {{ color: #FFFFFF; font-size: 14px; font-weight: 700; margin-bottom: 2px; }}
+                .matrix-badge {{ font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 4px; display: inline-block; }}
+                
+                /* 策略指引與風控雙欄布局 */
+                .strategy-box {{ display: grid; grid-template-columns: 1.8fr 1.2fr; gap: 20px; background: #121620; border-radius: 8px; padding: 18px; border: 1px solid #1F2433; }}
+                .strat-left {{ border-right: 1px solid #1F2433; padding-right: 20px; }}
+                .strat-title {{ color: #848E9C; font-size: 12px; margin-bottom: 6px; font-weight: bold; letter-spacing: 0.5px; }}
+                .strat-action {{ color: {color}; font-size: 16px; font-weight: 700; margin-bottom: 10px; }}
+                .strat-p {{ color: #CBD5E1; font-size: 12px; line-height: 1.6; margin: 0; text-align: justify; }}
+                
+                /* 右側風險參數列 */
+                .param-row {{ display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12px; border-bottom: 1px dashed #1F2433; padding-bottom: 4px; }}
+                .param-label {{ color: #848E9C; }
+                .param-value {{ color: #F1F5F9; font-weight: 600; font-family: 'Courier New', monospace; }}
+                
+                /* 手機板響應式斷點優化 */
+                @media (max-width: 768px) {{
+                    .matrix-grid {{ grid-template-columns: repeat(2, 1fr); }}
+                    .strategy-box {{ grid-template-columns: 1fr; }}
+                    .strat-left {{ border-right: none; padding-right: 0; border-bottom: 1px solid #1F2433; padding-bottom: 15px; }}
+                }}
+            </style>
             """, unsafe_allow_html=True)
 
-            st.caption(f"""
-            📌 判讀摘要：
-            - 趨勢：{trend_label}
-            - 動能：{momo_label}
-            - 心理：RSI {curr_rsi:.1f}
-            - 籌碼：{chip_label}
-            - 風控：{atr_label}
-            """)
+            # 開始渲染頂級外框
+            st.markdown(f"""
+            <div class="pro-panel">
+                <div class="pro-header">
+                    <div class="pro-title">
+                        <span>🤖 AI 核心量化診斷系統</span>
+                        <span style="color:#4A5568; font-size:13px; font-weight:normal;">| QUANT ENGINE V2.0</span>
+                    </div>
+                    <div class="pro-score-box">
+                        <div style="color:{color}; font-size:9px; font-weight:800; letter-spacing:0.5px;">PRO RATING</div>
+                        <div style="color:{color}; font-size:20px; font-weight:900;">{quant_score}<span style="font-size:11px; font-weight:500; color:#848E9C;">/100</span></div>
+                    </div>
+                </div>
 
+                <div class="matrix-grid">
+                    <div class="matrix-card">
+                        <div class="matrix-name">趨勢結構 (Trend)</div>
+                        <div class="matrix-state">{trend_label}</div>
+                        <div class="matrix-badge" style="background:{trend_color}15; color:{trend_color}; border:1px solid {trend_color}30;">{trend_badge}</div>
+                    </div>
+                    <div class="matrix-card">
+                        <div class="matrix-name">量能動態 (Momo)</div>
+                        <div class="matrix-state">{momo_label}</div>
+                        <div class="matrix-badge" style="background:{momo_color}15; color:{momo_color}; border:1px solid {momo_color}30;">{momo_badge}</div>
+                    </div>
+                    <div class="matrix-card">
+                        <div class="matrix-name">市場心理 (Psy)</div>
+                        <div class="matrix-state">{psy_label}</div>
+                        <div class="matrix-badge" style="background:{psy_color}15; color:{psy_color}; border:1px solid {psy_color}30;">{psy_badge}</div>
+                    </div>
+                    <div class="matrix-card">
+                        <div class="matrix-name">資金籌碼 (Chips)</div>
+                        <div class="matrix-state">{chip_label}</div>
+                        <div class="matrix-badge" style="background:{chip_color}15; color:{chip_color}; border:1px solid {chip_color}30;">{chip_badge}</div>
+                    </div>
+                    <div class="matrix-card">
+                        <div class="matrix-name">風控支撐 (ATR)</div>
+                        <div class="matrix-state">{atr_label}</div>
+                        <div class="matrix-badge" style="background:{atr_color}15; color:{atr_color}; border:1px solid {atr_color}30;">{atr_badge}</div>
+                    </div>
+                </div>
+
+                <div class="strategy-box">
+                    <div class="strat-left">
+                        <div class="strat-title">📋 交易執行策略 (Actionable Directive)</div>
+                        <div class="strat-action" style="color:{color};">{action_title}</div>
+                        <p class="strat-p">{action_desc}</p>
+                    </div>
+                    <div>
+                        <div class="strat-title">🛡️ 風控與精確價位 (Risk Matrix)</div>
+                        <div class="param-row">
+                            <span class="param-label">當前市場狀態</span>
+                            <span class="param-value" style="color:{color};">{rec}</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-label">心理指標 (RSI)</span>
+                            <span class="param-value">{curr_rsi:.2f}</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-label">動態防守價 (ATR)</span>
+                            <span class="param-value" style="color:#FFCC00;">{atr_stop:.2f}</span>
+                        </div>
+                        <div class="param-row">
+                            <span class="param-label">原始量化總分</span>
+                            <span class="param-value">{score:+}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 # ==============================================================================
 # Tab 4: 產經動態 (移入 Tab)
 # ==============================================================================
