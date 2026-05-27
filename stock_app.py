@@ -1389,7 +1389,7 @@ with tab_analysis:
                 
                 /* 右側風險參數列 */
                 .param-row {{ display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12px; border-bottom: 1px dashed #1F2433; padding-bottom: 4px; }}
-                .param-label {{ color: #848E9C; }
+                .param-label {{ color: #848E9C; }}
                 .param-value {{ color: #F1F5F9; font-weight: 600; font-family: 'Courier New', monospace; }}
                 
                 /* 手機板響應式斷點優化 */
