@@ -1367,8 +1367,6 @@ with tab_analysis:
             # 🎨 UI 渲染：注入高級暗色調 Bloomberg CSS 樣式
             # ─────────────────────────────────────────────────────────
             import streamlit.components.v1 as components
-
-            # 建立純粹的 HTML 內容（不使用 f-string，改用 .format() 徹底隔離大括號衝突）
             pro_html_raw = """
             <!DOCTYPE html>
             <html>
@@ -1389,13 +1387,13 @@ with tab_analysis:
                     box-shadow: 0 8px 32px rgba(0,0,0,0.3); 
                 }}
                 .pro-header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #232838; padding-bottom: 16px; margin-bottom: 20px; }}
-                .pro-title {{ color: #FFFFFF; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }}
-                .pro-score-box {{ background: {color}15; border: 1px solid {color}; border-radius: 6px; padding: 6px 14px; text-align: center; }}
+                .pro-title {{ color: #FFFFFF; font-size: 22px; font-weight: 700; display: flex; align-items: center; gap: 8px; }}
+                .pro-score-box {{ background: {color}15; border: 1px solid {color}; border-radius: 6px; padding: 8px 16px; text-align: center; }}
                 
                 .matrix-grid {{ display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 24px; }}
                 .matrix-card {{ background: #1A1F2C; border: 1px solid #2A3142; border-radius: 8px; padding: 12px; position: relative; }}
                 .matrix-name {{ color: #848E9C; font-size: 11px; font-weight: 500; margin-bottom: 4px; }}
-                .matrix-state {{ color: #FFFFFF; font-size: 14px; font-weight: 700; margin-bottom: 2px; }}
+                .matrix-state {{ color: #FFFFFF; font-size: 16px; font-weight: 700; margin-bottom: 2px; }}
                 .matrix-badge {{ font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 4px; display: inline-block; }}
                 
                 .strategy-box {{ display: grid; grid-template-columns: 1.8fr 1.2fr; gap: 20px; background: #121620; border-radius: 8px; padding: 18px; border: 1px solid #1F2433; }}
@@ -1420,7 +1418,7 @@ with tab_analysis:
             <div class="pro-panel">
                 <div class="pro-header">
                     <div class="pro-title">
-                        <span>🤖 AI 核心量化診斷系統</span>
+                        <span>🤖核心量化診斷系統</span>
                         <span style="color:#4A5568; font-size:13px; font-weight:normal;">| QUANT ENGINE V2.0</span>
                     </div>
                     <div class="pro-score-box">
@@ -1515,7 +1513,7 @@ with tab_analysis:
                 atr_stop=atr_stop,
                 score=score
             )
-            components.html(pro_html_final, height=380, scrolling=False)
+            components.html(pro_html_final, height=400, scrolling=False)
 # ==============================================================================
 # Tab 4: 產經動態 (移入 Tab)
 # ==============================================================================
