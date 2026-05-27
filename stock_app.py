@@ -1366,39 +1366,56 @@ with tab_analysis:
             # ─────────────────────────────────────────────────────────
             # 🎨 UI 渲染：注入高級暗色調 Bloomberg CSS 樣式
             # ─────────────────────────────────────────────────────────
-            pro_html_content = f"""
+            import streamlit.components.v1 as components
+
+            # 建立純粹的 HTML 內容（不使用 f-string，改用 .format() 徹底隔離大括號衝突）
+            pro_html_raw = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <meta charset="utf-8">
             <style>
-                .pro-panel {{ background: linear-gradient(145deg, #161A25, #0E1118); border: 1px solid #232838; border-radius: 12px; padding: 24px; margin-bottom: 25px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }}
+                body {{
+                    background-color: #0E1118;
+                    margin: 0;
+                    padding: 0;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                }}
+                .pro-panel {{ 
+                    background: linear-gradient(145deg, #161A25, #0E1118); 
+                    border: 1px solid #232838; 
+                    border-radius: 12px; 
+                    padding: 24px; 
+                    box-shadow: 0 8px 32px rgba(0,0,0,0.3); 
+                }}
                 .pro-header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #232838; padding-bottom: 16px; margin-bottom: 20px; }}
                 .pro-title {{ color: #FFFFFF; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }}
                 .pro-score-box {{ background: {color}15; border: 1px solid {color}; border-radius: 6px; padding: 6px 14px; text-align: center; }}
                 
-                /* 五大因子水平網格 */
                 .matrix-grid {{ display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 24px; }}
                 .matrix-card {{ background: #1A1F2C; border: 1px solid #2A3142; border-radius: 8px; padding: 12px; position: relative; }}
                 .matrix-name {{ color: #848E9C; font-size: 11px; font-weight: 500; margin-bottom: 4px; }}
                 .matrix-state {{ color: #FFFFFF; font-size: 14px; font-weight: 700; margin-bottom: 2px; }}
                 .matrix-badge {{ font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 4px; display: inline-block; }}
                 
-                /* 策略指引與風控雙欄布局 */
                 .strategy-box {{ display: grid; grid-template-columns: 1.8fr 1.2fr; gap: 20px; background: #121620; border-radius: 8px; padding: 18px; border: 1px solid #1F2433; }}
                 .strat-left {{ border-right: 1px solid #1F2433; padding-right: 20px; }}
                 .strat-title {{ color: #848E9C; font-size: 12px; margin-bottom: 6px; font-weight: bold; letter-spacing: 0.5px; }}
                 .strat-action {{ color: {color}; font-size: 16px; font-weight: 700; margin-bottom: 10px; }}
                 .strat-p {{ color: #CBD5E1; font-size: 12px; line-height: 1.6; margin: 0; text-align: justify; }}
                 
-                /* 右側風險參數列 */
                 .param-row {{ display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12px; border-bottom: 1px dashed #1F2433; padding-bottom: 4px; }}
                 .param-label {{ color: #848E9C; }}
                 .param-value {{ color: #F1F5F9; font-weight: 600; font-family: 'Courier New', monospace; }}
                 
-                /* 手機板響應式斷點優化 */
                 @media (max-width: 768px) {{
                     .matrix-grid {{ grid-template-columns: repeat(2, 1fr); }}
                     .strategy-box {{ grid-template-columns: 1fr; }}
                     .strat-left {{ border-right: none; padding-right: 0; border-bottom: 1px solid #1F2433; padding-bottom: 15px; }}
                 }}
             </style>
+            </head>
+            <body>
 
             <div class="pro-panel">
                 <div class="pro-header">
@@ -1414,27 +1431,27 @@ with tab_analysis:
 
                 <div class="matrix-grid">
                     <div class="matrix-card">
-                        <div class="matrix-name">趨勢結構 (Trend)</div>
+                        <div class="matrix-name">趨勢結構</div>
                         <div class="matrix-state">{trend_label}</div>
                         <div class="matrix-badge" style="background:{trend_color}15; color:{trend_color}; border:1px solid {trend_color}30;">{trend_badge}</div>
                     </div>
                     <div class="matrix-card">
-                        <div class="matrix-name">量能動態 (Momo)</div>
+                        <div class="matrix-name">量能動態</div>
                         <div class="matrix-state">{momo_label}</div>
                         <div class="matrix-badge" style="background:{momo_color}15; color:{momo_color}; border:1px solid {momo_color}30;">{momo_badge}</div>
                     </div>
                     <div class="matrix-card">
-                        <div class="matrix-name">市場心理 (Psy)</div>
+                        <div class="matrix-name">市場心理</div>
                         <div class="matrix-state">{psy_label}</div>
                         <div class="matrix-badge" style="background:{psy_color}15; color:{psy_color}; border:1px solid {psy_color}30;">{psy_badge}</div>
                     </div>
                     <div class="matrix-card">
-                        <div class="matrix-name">資金籌碼 (Chips)</div>
+                        <div class="matrix-name">資金籌碼</div>
                         <div class="matrix-state">{chip_label}</div>
                         <div class="matrix-badge" style="background:{chip_color}15; color:{chip_color}; border:1px solid {chip_color}30;">{chip_badge}</div>
                     </div>
                     <div class="matrix-card">
-                        <div class="matrix-name">風控支撐 (ATR)</div>
+                        <div class="matrix-name">風控支撐</div>
                         <div class="matrix-state">{atr_label}</div>
                         <div class="matrix-badge" style="background:{atr_color}15; color:{atr_color}; border:1px solid {atr_color}30;">{atr_badge}</div>
                     </div>
@@ -1443,7 +1460,7 @@ with tab_analysis:
                 <div class="strategy-box">
                     <div class="strat-left">
                         <div class="strat-title">📋 交易執行策略 (Actionable Directive)</div>
-                        <div class="strat-action" style="color:{color};">{action_title}</div>
+                        <div class="strat-action">{action_title}</div>
                         <p class="strat-p">{action_desc}</p>
                     </div>
                     <div>
@@ -1467,8 +1484,38 @@ with tab_analysis:
                     </div>
                 </div>
             </div>
+
+            </body>
+            </html>
             """
-            st.markdown(pro_html_content, unsafe_allow_html=True)
+
+            # 用 .format() 把 Python 變數填入，並確保雙大括號不受 f-string 干擾
+            pro_html_final = pro_html_raw.format(
+                color=color,
+                quant_score=quant_score,
+                trend_label=trend_label,
+                trend_color=trend_color,
+                trend_badge=trend_badge,
+                momo_label=momo_label,
+                momo_color=momo_color,
+                momo_badge=momo_badge,
+                psy_label=psy_label,
+                psy_color=psy_color,
+                psy_badge=psy_badge,
+                chip_label=chip_label,
+                chip_color=chip_color,
+                chip_badge=chip_badge,
+                atr_label=atr_label,
+                atr_color=atr_color,
+                atr_badge=atr_badge,
+                action_title=action_title,
+                action_desc=action_desc,
+                rec=rec,
+                curr_rsi=curr_rsi,
+                atr_stop=atr_stop,
+                score=score
+            )
+            components.html(pro_html_final, height=380, scrolling=False)
 # ==============================================================================
 # Tab 4: 產經動態 (移入 Tab)
 # ==============================================================================
