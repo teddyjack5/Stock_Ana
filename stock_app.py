@@ -1366,7 +1366,7 @@ with tab_analysis:
             # ─────────────────────────────────────────────────────────
             # 🎨 UI 渲染：注入高級暗色調 Bloomberg CSS 樣式
             # ─────────────────────────────────────────────────────────
-            st.markdown(f"""
+            pro_html_content = f"""
             <style>
                 .pro-panel {{ background: linear-gradient(145deg, #161A25, #0E1118); border: 1px solid #232838; border-radius: 12px; padding: 24px; margin-bottom: 25px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }}
                 .pro-header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #232838; padding-bottom: 16px; margin-bottom: 20px; }}
@@ -1399,10 +1399,7 @@ with tab_analysis:
                     .strat-left {{ border-right: none; padding-right: 0; border-bottom: 1px solid #1F2433; padding-bottom: 15px; }}
                 }}
             </style>
-            """, unsafe_allow_html=True)
 
-            # 開始渲染頂級外框
-            st.markdown(f"""
             <div class="pro-panel">
                 <div class="pro-header">
                     <div class="pro-title">
@@ -1470,7 +1467,8 @@ with tab_analysis:
                     </div>
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            """
+            st.markdown(pro_html_content, unsafe_allow_html=True)
 # ==============================================================================
 # Tab 4: 產經動態 (移入 Tab)
 # ==============================================================================
