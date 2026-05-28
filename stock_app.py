@@ -804,7 +804,7 @@ show_news = st.sidebar.checkbox("顯示相關新聞", value=True)
 # ==============================================================================
 # 【新增 UI 優化】 - st.tabs 模組化分頁架構
 # ==============================================================================
-tab_portfolio, tab_analysis,  tab_news, tab_fundamental, tab_comparison, tab_ai = st.tabs([
+tab_portfolio, tab_analysis,  tab_news, tab_fundamental, tab_comparison = st.tabs([
     "🏢 庫存總覽", "📈 個股深度分析",  "📰 產經動態", "💎 基本面河流圖", "⚖️ 同業比較"])
 
 # ==============================================================================
