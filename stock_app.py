@@ -792,7 +792,7 @@ current_costs = active_costs.get(selected_ticker, {"cost": 0.0, "qty": 0.0})
 st.sidebar.write("---")
 st.sidebar.subheader(f"💰 帳務編輯: {active_list.get(selected_ticker, '未知')}")
 new_cost = st.sidebar.number_input("買入成本", value=float(current_costs["cost"]), step=0.01, key=f"cost_input_{selected_ticker}")
-new_qty = st.sidebar.number_input("持有張數", value=float(current_costs["qty"]), step=1.0, key=f"qty_input_{selected_ticker}")
+new_qty = st.sidebar.number_input("持有張數", value=float(current_costs["qty"]), step=0.001,format="%.3f", key=f"qty_input_{selected_ticker}")
 if st.sidebar.button("💾 儲存帳務修改", use_container_width=True):
     st.session_state.db["costs"][selected_ticker] = {"cost": new_cost, "qty": new_qty}
     save_db_to_sheets(st.session_state.db) 
